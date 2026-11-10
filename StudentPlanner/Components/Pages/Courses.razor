@@ -1,0 +1,648 @@
+﻿@page "/courses"
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>Courses | StudentPlanner</PageTitle>
+
+<div class="courses-page">
+
+    <div class="courses-heading">
+        <div>
+            <span class="courses-eyebrow">ACADEMIC WORKSPACE</span>
+            <h1>My Courses</h1>
+            <p>Manage your subjects, instructors and class schedules.</p>
+        </div>
+
+        <button class="course-primary-button" @onclick="OpenCreateModal">
+            + Add Course
+        </button>
+    </div>
+
+    <!-- STATISTICS -->
+
+    <div class="courses-stats">
+
+        <div class="course-stat-card">
+            <div class="course-stat-icon purple">▦</div>
+            <div>
+                <span>Total Courses</span>
+                <strong>@courses.Count</strong>
+            </div>
+        </div>
+
+        <div class="course-stat-card">
+            <div class="course-stat-icon blue">◷</div>
+            <div>
+                <span>Total Credits</span>
+                <strong>@courses.Sum(c => c.Credits)</strong>
+            </div>
+        </div>
+
+        <div class="course-stat-card">
+            <div class="course-stat-icon green">✓</div>
+            <div>
+                <span>Active Courses</span>
+                <strong>@courses.Count(c => c.IsActive)</strong>
+            </div>
+        </div>
+
+        <div class="course-stat-card">
+            <div class="course-stat-icon orange">▤</div>
+            <div>
+                <span>Instructors</span>
+                <strong>@courses.Select(c => c.Instructor).Distinct().Count()</strong>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- SEARCH AND FILTER -->
+
+    <section class="courses-content">
+
+        <div class="courses-content-header">
+            <div>
+                <h2>All Courses</h2>
+                <p>View and manage your academic subjects.</p>
+            </div>
+
+            <span class="courses-results">@FilteredCourses.Count() results</span>
+        </div>
+
+        <div class="courses-toolbar">
+
+            <div class="course-search">
+                <span>⌕</span>
+                <input type="text"
+                       placeholder="Search courses..."
+                       @bind="searchTerm"
+                       @bind:event="oninput" />
+            </div>
+
+            <select class="course-filter" @bind="statusFilter">
+                <option value="All">All Courses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+            </select>
+
+            <button class="course-reset-button" @onclick="ResetFilters">
+                Reset
+            </button>
+
+        </div>
+
+        <!-- COURSE CARDS -->
+        @if (!FilteredCourses.Any()) {
+            <div class="courses-empty">
+                <span>▦</span>
+                <h3>No courses found</h3>
+                <p>Try changing your search or add a new course.</p>
+                <button class="course-primary-button"
+                        @onclick="OpenCreateModal">
+                    + Add Course
+                </button>
+            </div>
+        } else {
+            <div class="courses-grid">
+
+                @foreach (var course in FilteredCourses) {
+                    <article class="course-card" @key="course.Id">
+
+                        <div class="course-card-top">
+
+                            <div class="course-color-icon @course.Color">
+                                @course.Code.Substring(0, Math.Min(2, course.Code.Length))
+                            </div>
+
+                            <div class="course-card-actions">
+                                <button title="Edit"
+                                        @onclick="() => EditCourse(course)">
+                                    ✎
+                                </button>
+
+                                <button title="Delete"
+                                        @onclick="() => DeleteCourse(course.Id)">
+                                    🗑
+                                </button>
+                            </div>
+
+                        </div>
+
+                        <div class="course-card-info">
+                            <span class="course-code">@course.Code</span>
+
+                            <h3>@course.Name</h3>
+
+                            <p class="course-instructor">
+                                <span>◉</span> @course.Instructor
+                            </p>
+                        </div>
+
+                        <div class="course-details">
+
+                            <div>
+                                <span>ROOM</span>
+                                <strong>@course.Room</strong>
+                            </div>
+
+                            <div>
+                                <span>CREDITS</span>
+                                <strong>@course.Credits</strong>
+                            </div>
+
+                            <div>
+                                <span>STATUS</span>
+                                <strong class="@(course.IsActive ? "active-text" : "inactive-text")">
+                                    @(course.IsActive ? "Active" : "Inactive")
+                                </strong>
+                            </div>
+
+                        </div>
+
+                        <div class="course-schedule">
+                            <span class="schedule-label">CLASS SCHEDULE</span>
+                            <strong>@course.Schedule</strong>
+                        </div>
+
+                        <div class="course-card-footer">
+
+                            <button class="course-details-button"
+                                    @onclick="() => ViewCourse(course)">
+                                View Details →
+                            </button>
+
+                            <button class="course-status-button"
+                                    @onclick="() => ToggleCourseStatus(course)">
+                                @(course.IsActive ? "Deactivate" : "Activate")
+                            </button>
+
+                        </div>
+
+                    </article>
+                }
+
+            </div>
+        }
+
+    </section>
+
+</div>
+
+<!-- CREATE / EDIT MODAL -->
+@if (showModal) {
+    <div class="course-modal-overlay" @onclick="CloseModal">
+
+        <div class="course-modal" @onclick:stopPropagation="true">
+
+            <div class="course-modal-header">
+
+                <div>
+                    <span class="courses-eyebrow">COURSE MANAGEMENT</span>
+                    <h2>@(isEditing ? "Edit Course" : "Add New Course")</h2>
+                    <p>Enter your subject information below.</p>
+                </div>
+
+                <button class="course-close-button" @onclick="CloseModal">
+                    ×
+                </button>
+
+            </div>
+
+            <EditForm Model="formModel" OnValidSubmit="SaveCourse">
+
+                <DataAnnotationsValidator />
+
+                <div class="course-form-group">
+                    <label>Course Name *</label>
+                    <InputText class="course-input"
+                               @bind-Value="formModel.Name"
+                               placeholder="e.g. Database Management Systems" />
+                    <ValidationMessage For="@(() => formModel.Name)" />
+                </div>
+
+                <div class="course-form-row">
+
+                    <div class="course-form-group">
+                        <label>Course Code *</label>
+                        <InputText class="course-input"
+                                   @bind-Value="formModel.Code"
+                                   placeholder="e.g. DBMS" />
+                        <ValidationMessage For="@(() => formModel.Code)" />
+                    </div>
+
+                    <div class="course-form-group">
+                        <label>Credits *</label>
+                        <InputNumber class="course-input"
+                                     @bind-Value="formModel.Credits" />
+                        <ValidationMessage For="@(() => formModel.Credits)" />
+                    </div>
+
+                </div>
+
+                <div class="course-form-group">
+                    <label>Instructor *</label>
+                    <InputText class="course-input"
+                               @bind-Value="formModel.Instructor"
+                               placeholder="e.g. John Smith" />
+                    <ValidationMessage For="@(() => formModel.Instructor)" />
+                </div>
+
+                <div class="course-form-row">
+
+                    <div class="course-form-group">
+                        <label>Classroom</label>
+                        <InputText class="course-input"
+                                   @bind-Value="formModel.Room"
+                                   placeholder="e.g. C1.2.301" />
+                    </div>
+
+                    <div class="course-form-group">
+                        <label>Schedule</label>
+                        <InputText class="course-input"
+                                   @bind-Value="formModel.Schedule"
+                                   placeholder="e.g. Mon, 10:00" />
+                    </div>
+
+                </div>
+
+                <div class="course-form-row">
+
+                    <div class="course-form-group">
+                        <label>Color</label>
+                        <InputSelect class="course-input"
+                                     @bind-Value="formModel.Color">
+                            <option value="purple">Purple</option>
+                            <option value="blue">Blue</option>
+                            <option value="green">Green</option>
+                            <option value="orange">Orange</option>
+                            <option value="pink">Pink</option>
+                        </InputSelect>
+                    </div>
+
+                    <div class="course-form-group">
+                        <label>Status</label>
+                        <InputSelect class="course-input"
+                                     @bind-Value="formModel.IsActive">
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </InputSelect>
+                    </div>
+
+                </div>
+
+                <div class="course-form-group">
+                    <label>Description</label>
+                    <InputTextArea class="course-input course-textarea"
+                                   @bind-Value="formModel.Description"
+                                   placeholder="Course description..." />
+                </div>
+
+                <div class="course-modal-actions">
+
+                    <button type="button"
+                            class="course-cancel-button"
+                            @onclick="CloseModal">
+                        Cancel
+                    </button>
+
+                    <button type="submit" class="course-primary-button">
+                        @(isEditing ? "Save Changes" : "Create Course")
+                    </button>
+
+                </div>
+
+            </EditForm>
+
+        </div>
+
+    </div>
+}
+
+<!-- COURSE DETAILS MODAL -->
+@if (selectedCourse != null) {
+    <div class="course-modal-overlay" @onclick="CloseDetails">
+
+        <div class="course-modal details-modal"
+             @onclick:stopPropagation="true">
+
+            <div class="course-modal-header">
+
+                <div>
+                    <span class="courses-eyebrow">COURSE OVERVIEW</span>
+                    <h2>@selectedCourse.Name</h2>
+                    <p>@selectedCourse.Code</p>
+                </div>
+
+                <button class="course-close-button" @onclick="CloseDetails">
+                    ×
+                </button>
+
+            </div>
+
+            <div class="course-detail-list">
+
+                <div>
+                    <span>Instructor</span>
+                    <strong>@selectedCourse.Instructor</strong>
+                </div>
+
+                <div>
+                    <span>Classroom</span>
+                    <strong>@selectedCourse.Room</strong>
+                </div>
+
+                <div>
+                    <span>Credits</span>
+                    <strong>@selectedCourse.Credits</strong>
+                </div>
+
+                <div>
+                    <span>Schedule</span>
+                    <strong>@selectedCourse.Schedule</strong>
+                </div>
+
+                <div>
+                    <span>Status</span>
+                    <strong>@(selectedCourse.IsActive ? "Active" : "Inactive")</strong>
+                </div>
+
+                <div>
+                    <span>Description</span>
+                    <strong>
+                        @(string.IsNullOrWhiteSpace(selectedCourse.Description)
+                            ? "No description available."
+                            : selectedCourse.Description)
+                    </strong>
+                </div>
+
+            </div>
+
+            <div class="course-modal-actions">
+                <button class="course-cancel-button"
+                        @onclick="CloseDetails">
+                    Close
+                </button>
+
+                <button class="course-primary-button"
+                        @onclick="() => EditCourse(selectedCourse)">
+                    Edit Course
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+}
+
+@code {
+
+    // MODEL
+
+    public class CourseModel {
+        public int Id { get; set; }
+
+        [Required(ErrorMessage = "Course name is required.")]
+        [StringLength(100, MinimumLength = 3,
+            ErrorMessage = "Name must contain 3-100 characters.")]
+        public string Name { get; set; } = "";
+
+        [Required(ErrorMessage = "Course code is required.")]
+        [StringLength(15, MinimumLength = 2)]
+        public string Code { get; set; } = "";
+
+        [Required(ErrorMessage = "Instructor is required.")]
+        public string Instructor { get; set; } = "";
+
+        [Range(1, 10, ErrorMessage = "Credits must be between 1 and 10.")]
+        public int Credits { get; set; } = 3;
+
+        public string Room { get; set; } = "";
+
+        public string Schedule { get; set; } = "";
+
+        public string Color { get; set; } = "purple";
+
+        public bool IsActive { get; set; } = true;
+
+        [StringLength(500)]
+        public string Description { get; set; } = "";
+    }
+
+    // MOCK DATA
+
+    private List<CourseModel> courses = new()
+    {
+        new()
+        {
+            Id = 1,
+            Name = "Database Management Systems",
+            Code = "DBMS",
+            Instructor = "Pavel Tsoi",
+            Credits = 5,
+            Room = "C1.2.301",
+            Schedule = "Mon / Wed · 14:00",
+            Color = "purple",
+            Description = "Learn database design, SQL, normalization and database management.",
+            IsActive = true
+        },
+
+        new()
+        {
+            Id = 2,
+            Name = "Object Oriented Programming",
+            Code = "OOP",
+            Instructor = "Alex Johnson",
+            Credits = 5,
+            Room = "B2.1.205",
+            Schedule = "Tue / Thu · 10:00",
+            Color = "blue",
+            Description = "Learn object-oriented programming principles and C# and Java development.",
+            IsActive = true
+        },
+
+        new()
+        {
+            Id = 3,
+            Name = "Algorithms and Data Structures",
+            Code = "ADS",
+            Instructor = "Michael Brown",
+            Credits = 5,
+            Room = "A3.1.102",
+            Schedule = "Mon / Fri · 12:00",
+            Color = "green",
+            Description = "Study algorithms, data structures and computational complexity.",
+            IsActive = true
+        },
+
+        new()
+        {
+            Id = 4,
+            Name = "English Language",
+            Code = "ENG",
+            Instructor = "Sarah Williams",
+            Credits = 3,
+            Room = "C2.3.101",
+            Schedule = "Wed / Fri · 09:00",
+            Color = "orange",
+            Description = "Improve academic English, communication and presentation skills.",
+            IsActive = true
+        },
+
+        new()
+        {
+            Id = 5,
+            Name = "Web Development",
+            Code = "WEB",
+            Instructor = "David Miller",
+            Credits = 4,
+            Room = "D1.2.201",
+            Schedule = "Tue / Thu · 14:00",
+            Color = "pink",
+            Description = "Learn modern web technologies and build interactive web applications.",
+            IsActive = true
+        },
+
+        new()
+        {
+            Id = 6,
+            Name = "Mathematics",
+            Code = "MATH",
+            Instructor = "Robert Wilson",
+            Credits = 4,
+            Room = "A1.1.305",
+            Schedule = "Thu · 16:00",
+            Color = "blue",
+            Description = "Study mathematical foundations for computer science.",
+            IsActive = false
+        }
+    };
+
+    // STATE
+
+    private string searchTerm = "";
+    private string statusFilter = "All";
+
+    private bool showModal = false;
+    private bool isEditing = false;
+
+    private int editingId;
+
+    private CourseModel formModel = new();
+
+    private CourseModel? selectedCourse;
+
+    // FILTERING
+
+    private IEnumerable<CourseModel> FilteredCourses =>
+        courses.Where(c =>
+            (string.IsNullOrWhiteSpace(searchTerm) ||
+             c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+             c.Code.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+             c.Instructor.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+            &&
+            (statusFilter == "All" ||
+             (statusFilter == "Active" && c.IsActive) ||
+             (statusFilter == "Inactive" && !c.IsActive))
+        );
+
+    // CREATE
+
+    private void OpenCreateModal() {
+        formModel = new CourseModel();
+        isEditing = false;
+        showModal = true;
+    }
+
+    // EDIT
+
+    private void EditCourse(CourseModel course) {
+        editingId = course.Id;
+
+        formModel = new CourseModel {
+            Id = course.Id,
+            Name = course.Name,
+            Code = course.Code,
+            Instructor = course.Instructor,
+            Credits = course.Credits,
+            Room = course.Room,
+            Schedule = course.Schedule,
+            Color = course.Color,
+            IsActive = course.IsActive,
+            Description = course.Description
+        };
+
+        selectedCourse = null;
+        isEditing = true;
+        showModal = true;
+    }
+
+    // SAVE
+
+    private void SaveCourse() {
+        if (isEditing) {
+            var existing = courses.FirstOrDefault(c => c.Id == editingId);
+
+            if (existing != null) {
+                existing.Name = formModel.Name;
+                existing.Code = formModel.Code;
+                existing.Instructor = formModel.Instructor;
+                existing.Credits = formModel.Credits;
+                existing.Room = formModel.Room;
+                existing.Schedule = formModel.Schedule;
+                existing.Color = formModel.Color;
+                existing.IsActive = formModel.IsActive;
+                existing.Description = formModel.Description;
+            }
+        } else {
+            formModel.Id = courses.Count == 0
+                ? 1
+                : courses.Max(c => c.Id) + 1;
+
+            courses.Add(formModel);
+        }
+
+        CloseModal();
+    }
+
+    // DELETE
+
+    private void DeleteCourse(int id) {
+        var course = courses.FirstOrDefault(c => c.Id == id);
+
+        if (course != null) {
+            courses.Remove(course);
+        }
+
+        if (selectedCourse?.Id == id) {
+            selectedCourse = null;
+        }
+    }
+
+    // VIEW DETAILS
+
+    private void ViewCourse(CourseModel course) {
+        selectedCourse = course;
+    }
+
+    private void CloseDetails() {
+        selectedCourse = null;
+    }
+
+    // TOGGLE STATUS
+
+    private void ToggleCourseStatus(CourseModel course) {
+        course.IsActive = !course.IsActive;
+    }
+
+    // RESET
+
+    private void ResetFilters() {
+        searchTerm = "";
+        statusFilter = "All";
+    }
+
+    // CLOSE
+
+    private void CloseModal() {
+        showModal = false;
+    }
+}

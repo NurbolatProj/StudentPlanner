@@ -1,0 +1,188 @@
+﻿@inherits LayoutComponentBase
+
+<CascadingValue Value="this">
+    <div class="app-shell @(isDark ? "dark" : "light")">
+
+        @if (isMenuOpen) {
+            <div class="sidebar-overlay" @onclick="CloseMenu"></div>
+        }
+
+        <aside class="sidebar @(isMenuOpen ? "open" : "")">
+
+            <div class="brand">
+                <div class="brand-icon">S</div>
+                <div>
+                    <h2>Student<span>Planner</span></h2>
+                    <small>@T("workspace")</small>
+                </div>
+            </div>
+
+            <div class="sidebar-label">@T("workspace_section")</div>
+
+            <nav class="navigation">
+                <NavLink href="/" Match="NavLinkMatch.All" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">▦</span>
+                    @T("dashboard")
+                </NavLink>
+
+                <NavLink href="/calendar" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">▦</span>
+                    @T("calendar")
+                </NavLink>
+
+                <NavLink href="/assignments" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">☑</span>
+                    @T("assignments")
+                </NavLink>
+
+                <NavLink href="/courses" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">▤</span>
+                    @T("courses")
+                </NavLink>
+
+                <NavLink href="/grades" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">▥</span>
+                    @T("grades")
+                </NavLink>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="sidebar-label">@T("preferences")</div>
+
+                <NavLink href="/settings" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon">⚙</span>
+                    @T("settings")
+                </NavLink>
+
+                <div class="user-profile">
+                    <div class="avatar">N</div>
+                    <div class="user-info">
+                        <strong>Nurbolat</strong>
+                        <small>@T("student_account")</small>
+                    </div>
+                    <span class="online-dot"></span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-area">
+            <header class="topbar">
+
+                <button class="mobile-menu" @onclick="ToggleMenu">
+                    ☰
+                </button>
+
+                <div class="breadcrumb">
+                    <span>@T("workspace")</span>
+                    <span class="breadcrumb-divider">/</span>
+                    <strong>Student Planner</strong>
+                </div>
+
+                <div class="header-actions">
+                    <span class="today-label">@T("learning_space")</span>
+
+                    <button class="theme-button"
+                            @onclick="ToggleTheme"
+                            title="@T("switch_theme")">
+                        @(isDark ? "☀" : "☾")
+                    </button>
+
+                    <div class="header-avatar">N</div>
+                </div>
+            </header>
+
+            <section class="page-content">
+                @Body
+            </section>
+        </main>
+    </div>
+</CascadingValue>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    public bool isDark { get; private set; } = true;
+    public string CurrentLanguage { get; private set; } = "English";
+
+    private bool isMenuOpen = false;
+
+    public void SetTheme(string selectedTheme) {
+        isDark = selectedTheme == "Dark";
+        StateHasChanged();
+    }
+
+    public void SetLanguage(string selectedLanguage) {
+        CurrentLanguage = selectedLanguage;
+        StateHasChanged();
+    }
+
+    private void ToggleTheme() {
+        isDark = !isDark;
+    }
+
+    private void ToggleMenu() {
+        isMenuOpen = !isMenuOpen;
+    }
+
+    private void CloseMenu() {
+        isMenuOpen = false;
+    }
+
+    public string T(string key) {
+        var translations = new Dictionary<string, Dictionary<string, string>> {
+            ["English"] = new() {
+                ["workspace"] = "STUDENT WORKSPACE",
+                ["workspace_section"] = "WORKSPACE",
+                ["dashboard"] = "Dashboard",
+                ["calendar"] = "Calendar",
+                ["assignments"] = "Assignments",
+                ["courses"] = "Courses",
+                ["grades"] = "Grades & Analytics",
+                ["preferences"] = "PREFERENCES",
+                ["settings"] = "Settings",
+                ["student_account"] = "Student Account",
+                ["learning_space"] = "Your learning space",
+                ["switch_theme"] = "Switch theme"
+            },
+            ["Русский"] = new() {
+                ["workspace"] = "СТУДЕНЧЕСКОЕ ПРОСТРАНСТВО",
+                ["workspace_section"] = "РАБОЧАЯ ОБЛАСТЬ",
+                ["dashboard"] = "Главная",
+                ["calendar"] = "Календарь",
+                ["assignments"] = "Задания",
+                ["courses"] = "Курсы",
+                ["grades"] = "Оценки и аналитика",
+                ["preferences"] = "НАСТРОЙКИ",
+                ["settings"] = "Настройки",
+                ["student_account"] = "Студенческий аккаунт",
+                ["learning_space"] = "Твоё учебное пространство",
+                ["switch_theme"] = "Сменить тему"
+            },
+            ["Қазақша"] = new() {
+                ["workspace"] = "СТУДЕНТТІК КЕҢІСТІК",
+                ["workspace_section"] = "ЖҰМЫС АЙМАҒЫ",
+                ["dashboard"] = "Басты бет",
+                ["calendar"] = "Күнтізбе",
+                ["assignments"] = "Тапсырмалар",
+                ["courses"] = "Курстар",
+                ["grades"] = "Бағалар мен аналитика",
+                ["preferences"] = "БАПТАУЛАР",
+                ["settings"] = "Баптаулар",
+                ["student_account"] = "Студент аккаунты",
+                ["learning_space"] = "Сіздің оқу кеңістігіңіз",
+                ["switch_theme"] = "Тақырыпты өзгерту"
+            }
+        };
+
+        if (translations.TryGetValue(CurrentLanguage, out var language) &&
+            language.TryGetValue(key, out var translated)) {
+            return translated;
+        }
+
+        return key;
+    }
+}

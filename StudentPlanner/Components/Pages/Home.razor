@@ -1,0 +1,345 @@
+﻿@page "/"
+@using System.Linq
+
+<PageTitle>Dashboard | StudentPlanner</PageTitle>
+
+<div class="dashboard">
+
+    <!-- Welcome -->
+    <div class="welcome-section">
+        <div>
+            <span class="welcome-label">STUDENT OVERVIEW</span>
+            <h1>Welcome back, Nurbolat! 👋</h1>
+            <p>Here's what's happening with your studies today.</p>
+        </div>
+
+        <div class="date-card">
+            <span>YOUR WORKSPACE</span>
+            <strong>@DateTime.Now.ToString("dddd, MMMM dd")</strong>
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div class="stats-grid">
+
+        <div class="stat-card">
+            <div class="stat-top">
+                <span class="stat-icon purple">▤</span>
+                <span class="stat-trend">Academic</span>
+            </div>
+            <span class="stat-title">Current GPA</span>
+            <div class="stat-value">3.75 <span>/ 4.00</span></div>
+            <div class="stat-progress">
+                <div class="progress-fill purple-fill" style="width:93.75%"></div>
+            </div>
+            <span class="stat-description">Based on mock grades</span>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-top">
+                <span class="stat-icon blue">☑</span>
+                <span class="stat-trend">This semester</span>
+            </div>
+            <span class="stat-title">Total Assignments</span>
+            <div class="stat-value">@assignments.Count</div>
+            <div class="stat-progress">
+                <div class="progress-fill blue-fill"
+                     style="width:@CompletionPercentage%"></div>
+            </div>
+            <span class="stat-description">@CompletedCount completed</span>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-top">
+                <span class="stat-icon orange">◷</span>
+                <span class="stat-trend">Needs attention</span>
+            </div>
+            <span class="stat-title">Pending Tasks</span>
+            <div class="stat-value">@PendingCount</div>
+            <div class="stat-progress">
+                <div class="progress-fill orange-fill" style="width:65%"></div>
+            </div>
+            <span class="stat-description">Tasks waiting for completion</span>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-top">
+                <span class="stat-icon green">▣</span>
+                <span class="stat-trend">Semester</span>
+            </div>
+            <span class="stat-title">Active Courses</span>
+            <div class="stat-value">@courses.Count</div>
+            <div class="stat-progress">
+                <div class="progress-fill green-fill" style="width:75%"></div>
+            </div>
+            <span class="stat-description">Courses currently enrolled</span>
+        </div>
+
+    </div>
+
+    <!-- Main content -->
+    <div class="dashboard-grid">
+
+        <!-- Assignments -->
+        <section class="dashboard-card assignments-panel">
+
+            <div class="section-heading">
+                <div>
+                    <h2>My Assignments</h2>
+                    <p>Keep track of your academic tasks</p>
+                </div>
+                <a href="/assignments" class="view-link">View all →</a>
+            </div>
+
+            <div class="task-list">
+
+                @foreach (var task in assignments) {
+                    <div class="task-item">
+                        <button class="task-check @(task.IsCompleted ? "checked" : "")"
+                                @onclick="() => ToggleTask(task)"
+                                aria-label="Toggle task completion">
+                            @(task.IsCompleted ? "✓" : "")
+                        </button>
+
+                        <div class="task-info">
+                            <strong class="@(task.IsCompleted ? "task-done" : "")">
+                                @task.Title
+                            </strong>
+                            <span>@task.Course · @task.DueDate</span>
+                        </div>
+
+                        <span class="priority-badge @task.Priority.ToLower()">
+                            @task.Priority
+                        </span>
+                    </div>
+                }
+
+            </div>
+
+            <div class="task-summary">
+                <span>Completion progress</span>
+                <strong>@CompletionPercentage%</strong>
+            </div>
+
+            <div class="progress-track">
+                <div class="progress-fill purple-fill"
+                     style="width:@CompletionPercentage%"></div>
+            </div>
+
+        </section>
+
+        <!-- GPA -->
+        <section class="dashboard-card gpa-panel">
+
+            <div class="section-heading">
+                <div>
+                    <h2>Academic Performance</h2>
+                    <p>Your current academic overview</p>
+                </div>
+            </div>
+
+            <div class="gpa-display">
+                <div class="gpa-circle">
+                    <div>
+                        <strong>3.75</strong>
+                        <span>OUT OF 4.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gpa-caption">
+                <strong>Excellent progress!</strong>
+                <span>Keep working towards your academic goals.</span>
+            </div>
+
+            <div class="performance-row">
+                <span>Academic target</span>
+                <strong>4.00 GPA</strong>
+            </div>
+
+            <div class="performance-row">
+                <span>Current performance</span>
+                <strong>93.75%</strong>
+            </div>
+
+            <a href="/grades" class="full-link">View grade analytics →</a>
+
+        </section>
+
+        <!-- Deadlines -->
+        <section class="dashboard-card deadlines-panel">
+
+            <div class="section-heading">
+                <div>
+                    <h2>Upcoming Deadlines</h2>
+                    <p>Don't miss important submissions</p>
+                </div>
+                <a href="/assignments" class="view-link">View all →</a>
+            </div>
+
+            @foreach (var deadline in deadlines) {
+                <div class="deadline-item">
+                    <div class="deadline-date">
+                        <strong>@deadline.Day</strong>
+                        <span>@deadline.Month</span>
+                    </div>
+
+                    <div class="deadline-info">
+                        <strong>@deadline.Title</strong>
+                        <span>@deadline.Course</span>
+                    </div>
+
+                    <span class="deadline-priority @deadline.Priority.ToLower()">
+                        @deadline.Priority
+                    </span>
+                </div>
+            }
+
+        </section>
+
+        <!-- Weekly progress -->
+        <section class="dashboard-card weekly-panel">
+
+            <div class="section-heading">
+                <div>
+                    <h2>Weekly Study Activity</h2>
+                    <p>Your planned study hours</p>
+                </div>
+                <span class="weekly-total">18.5 hrs</span>
+            </div>
+
+            <div class="weekly-chart">
+                @foreach (var day in weeklyActivity) {
+                    <div class="chart-column">
+                        <span class="chart-value">@day.Hours</span>
+                        <div class="chart-bar-container">
+                            <div class="chart-bar"
+                                 style="height:@(day.Hours / 8 * 100)%">
+                            </div>
+                        </div>
+                        <span class="chart-day">@day.Day</span>
+                    </div>
+                }
+            </div>
+
+            <div class="weekly-footer">
+                <span>Weekly study goal</span>
+                <strong>18.5 / 25 hours</strong>
+            </div>
+
+            <div class="progress-track">
+                <div class="progress-fill green-fill" style="width:74%"></div>
+            </div>
+
+        </section>
+
+    </div>
+
+    <!-- Courses -->
+    <section class="dashboard-card courses-panel">
+
+        <div class="section-heading">
+            <div>
+                <h2>My Courses</h2>
+                <p>Overview of your current semester</p>
+            </div>
+            <a href="/courses" class="view-link">All courses →</a>
+        </div>
+
+        <div class="courses-grid">
+
+            @foreach (var course in courses) {
+                <div class="course-item">
+                    <div class="course-icon">@course.Icon</div>
+                    <div class="course-info">
+                        <strong>@course.Name</strong>
+                        <span>@course.Code</span>
+                    </div>
+                    <div class="course-grade">
+                        <strong>@course.Grade</strong>
+                        <span>Current grade</span>
+                    </div>
+                </div>
+            }
+
+        </div>
+
+    </section>
+
+</div>
+
+@code {
+    private class AssignmentItem {
+        public string Title { get; set; } = "";
+        public string Course { get; set; } = "";
+        public string DueDate { get; set; } = "";
+        public string Priority { get; set; } = "";
+        public bool IsCompleted { get; set; }
+    }
+
+    private class DeadlineItem {
+        public string Day { get; set; } = "";
+        public string Month { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Course { get; set; } = "";
+        public string Priority { get; set; } = "";
+    }
+
+    private class CourseItem {
+        public string Icon { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Code { get; set; } = "";
+        public string Grade { get; set; } = "";
+    }
+
+    private class ActivityItem {
+        public string Day { get; set; } = "";
+        public double Hours { get; set; }
+    }
+
+    private List<AssignmentItem> assignments = new()
+    {
+        new() { Title = "Database Normalization", Course = "DBMS", DueDate = "Due Nov 12", Priority = "High" },
+        new() { Title = "OOP Project Implementation", Course = "Programming", DueDate = "Due Nov 14", Priority = "Medium" },
+        new() { Title = "English Presentation", Course = "English", DueDate = "Due Nov 16", Priority = "Low", IsCompleted = true },
+        new() { Title = "Algorithms Assignment", Course = "ADS", DueDate = "Due Nov 18", Priority = "High" }
+    };
+
+    private List<DeadlineItem> deadlines = new()
+    {
+        new() { Day = "12", Month = "NOV", Title = "Database Normalization", Course = "DBMS", Priority = "High" },
+        new() { Day = "14", Month = "NOV", Title = "OOP Project", Course = "Programming", Priority = "Medium" },
+        new() { Day = "16", Month = "NOV", Title = "English Presentation", Course = "English", Priority = "Low" }
+    };
+
+    private List<CourseItem> courses = new()
+    {
+        new() { Icon = "💻", Name = "Object Oriented Programming", Code = "CS201", Grade = "A-" },
+        new() { Icon = "🗄️", Name = "Database Management", Code = "CS202", Grade = "A" },
+        new() { Icon = "📊", Name = "Algorithms & Data Structures", Code = "CS203", Grade = "B+" },
+        new() { Icon = "🌐", Name = "English", Code = "ENG201", Grade = "A-" }
+    };
+
+    private List<ActivityItem> weeklyActivity = new()
+    {
+        new() { Day = "MON", Hours = 3.5 },
+        new() { Day = "TUE", Hours = 5 },
+        new() { Day = "WED", Hours = 2.5 },
+        new() { Day = "THU", Hours = 4 },
+        new() { Day = "FRI", Hours = 1.5 },
+        new() { Day = "SAT", Hours = 2 },
+        new() { Day = "SUN", Hours = 0 }
+    };
+
+    private int CompletedCount => assignments.Count(x => x.IsCompleted);
+    private int PendingCount => assignments.Count(x => !x.IsCompleted);
+
+    private int CompletionPercentage =>
+        assignments.Count == 0
+            ? 0
+            : (int)Math.Round((double)CompletedCount / assignments.Count * 100);
+
+    private void ToggleTask(AssignmentItem task) {
+        task.IsCompleted = !task.IsCompleted;
+    }
+}

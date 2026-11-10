@@ -1,0 +1,494 @@
+﻿@page "/settings"
+@using StudentPlanner.Components.Layout
+
+<PageTitle>Settings</PageTitle>
+
+<div class="settings-page">
+
+    <div class="settings-header">
+        <div>
+            <span class="settings-eyebrow">STUDENT WORKSPACE</span>
+            <h1>@ST("title")</h1>
+            <p>@ST("subtitle")</p>
+        </div>
+        <div class="settings-header-icon">⚙</div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(message)) {
+        <div class="settings-message">@message</div>
+    }
+
+    <div class="settings-grid">
+
+        <section class="settings-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("profile")</h2>
+                    <p>@ST("profile_desc")</p>
+                </div>
+                <span class="card-icon">👤</span>
+            </div>
+
+            <div class="profile-heading">
+                <div class="profile-avatar">@GetInitial()</div>
+                <div>
+                    <strong>@fullName</strong>
+                    <span>@studentId</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("full_name")</label>
+                <input @bind="fullName" />
+            </div>
+
+            <div class="form-group">
+                <label>@ST("email")</label>
+                <input type="email" @bind="email" />
+            </div>
+
+            <div class="form-group">
+                <label>@ST("student_id")</label>
+                <input @bind="studentId" />
+            </div>
+
+            <div class="form-group">
+                <label>@ST("program")</label>
+                <input @bind="program" />
+            </div>
+        </section>
+
+        <section class="settings-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("appearance")</h2>
+                    <p>@ST("appearance_desc")</p>
+                </div>
+                <span class="card-icon">🎨</span>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("theme")</label>
+                <select @bind="theme" @bind:after="ApplyTheme">
+                    <option value="Dark">Dark</option>
+                    <option value="Light">Light</option>
+                </select>
+            </div>
+
+            <div class="theme-options">
+                <button class="theme-option @(theme == "Dark" ? "selected" : "")"
+                        @onclick='() => ChooseTheme("Dark")'>
+                    <span class="theme-option-icon">🌙</span>
+                    <strong>Dark</strong>
+                    <small>@ST("dark_desc")</small>
+                    <span class="theme-check">@(theme == "Dark" ? "✓" : "")</span>
+                </button>
+
+                <button class="theme-option @(theme == "Light" ? "selected" : "")"
+                        @onclick='() => ChooseTheme("Light")'>
+                    <span class="theme-option-icon">☀️</span>
+                    <strong>Light</strong>
+                    <small>@ST("light_desc")</small>
+                    <span class="theme-check">@(theme == "Light" ? "✓" : "")</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="settings-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("notifications")</h2>
+                    <p>@ST("notifications_desc")</p>
+                </div>
+                <span class="card-icon">🔔</span>
+            </div>
+
+            <div class="toggle-row">
+                <div>
+                    <strong>@ST("assignment_reminders")</strong>
+                    <p>@ST("assignment_reminders_desc")</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" @bind="assignmentNotifications" />
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div>
+                    <strong>@ST("exam_reminders")</strong>
+                    <p>@ST("exam_reminders_desc")</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" @bind="examNotifications" />
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div>
+                    <strong>@ST("deadline_alerts")</strong>
+                    <p>@ST("deadline_alerts_desc")</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" @bind="deadlineNotifications" />
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div>
+                    <strong>@ST("weekly_summary")</strong>
+                    <p>@ST("weekly_summary_desc")</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" @bind="weeklySummary" />
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+        </section>
+
+        <section class="settings-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("language_region")</h2>
+                    <p>@ST("language_desc")</p>
+                </div>
+                <span class="card-icon">🌐</span>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("language")</label>
+                <select @bind="language" @bind:after="ApplyLanguage">
+                    <option value="English">English</option>
+                    <option value="Русский">Русский</option>
+                    <option value="Қазақша">Қазақша</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("timezone")</label>
+                <select @bind="timeZone">
+                    <option value="Asia/Almaty">Astana / Almaty (UTC+5)</option>
+                    <option value="UTC">UTC</option>
+                    <option value="Europe/London">London</option>
+                </select>
+            </div>
+
+            <div class="language-note">
+                <span>ⓘ</span>
+                @ST("language_note")
+            </div>
+        </section>
+
+        <section class="settings-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("academic")</h2>
+                    <p>@ST("academic_desc")</p>
+                </div>
+                <span class="card-icon">🎓</span>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("semester")</label>
+                <select @bind="semester">
+                    <option>1st Semester</option>
+                    <option>2nd Semester</option>
+                    <option>Summer Semester</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("academic_year")</label>
+                <select @bind="academicYear">
+                    <option>2025-2026</option>
+                    <option>2026-2027</option>
+                    <option>2027-2028</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>@ST("gpa_scale")</label>
+                <select @bind="gpaScale">
+                    <option value="4.0">4.0 Scale</option>
+                    <option value="5.0">5.0 Scale</option>
+                    <option value="100">100 Point Scale</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="settings-card account-card">
+            <div class="card-heading">
+                <div>
+                    <h2>@ST("account")</h2>
+                    <p>@ST("account_desc")</p>
+                </div>
+                <span class="card-icon">🛡️</span>
+            </div>
+
+            <div class="account-status">
+                <span class="status-dot"></span>
+                <div>
+                    <strong>@ST("active")</strong>
+                    <p>@ST("active_desc")</p>
+                </div>
+            </div>
+
+            <button class="reset-button" @onclick="ResetSettings">
+                ↺ @ST("reset")
+            </button>
+        </section>
+
+    </div>
+
+    <div class="settings-footer">
+        <span>@ST("changes_note")</span>
+        <div>
+            <button class="reset-secondary" @onclick="ResetSettings">
+                @ST("reset")
+            </button>
+            <button class="save-button" @onclick="SaveSettings">
+                ✓ @ST("save")
+            </button>
+        </div>
+    </div>
+
+</div>
+
+@code {
+    [CascadingParameter]
+    public MainLayout? Layout { get; set; }
+
+    private string fullName = "Nurbolat Otep";
+    private string email = "student@astanait.edu.kz";
+    private string studentId = "IT-2508";
+    private string program = "Computer Science";
+
+    private string theme = "Dark";
+    private string language = "English";
+    private string timeZone = "Asia/Almaty";
+
+    private string semester = "2nd Semester";
+    private string academicYear = "2026-2027";
+    private string gpaScale = "4.0";
+
+    private bool assignmentNotifications = true;
+    private bool examNotifications = true;
+    private bool deadlineNotifications = true;
+    private bool weeklySummary;
+
+    private string message = "";
+
+    protected override void OnInitialized() {
+        if (Layout is not null) {
+            theme = Layout.isDark ? "Dark" : "Light";
+            language = Layout.CurrentLanguage;
+        }
+    }
+
+    private void ApplyTheme() {
+        Layout?.SetTheme(theme);
+    }
+
+    private void ChooseTheme(string selectedTheme) {
+        theme = selectedTheme;
+        ApplyTheme();
+    }
+
+    private void ApplyLanguage() {
+        Layout?.SetLanguage(language);
+    }
+
+    private string GetInitial() {
+        return string.IsNullOrWhiteSpace(fullName)
+            ? "N"
+            : fullName.Trim().Substring(0, 1).ToUpper();
+    }
+
+    private void SaveSettings() {
+        if (string.IsNullOrWhiteSpace(fullName) ||
+            string.IsNullOrWhiteSpace(email) ||
+            !email.Contains('@')) {
+            message = ST("validation_error");
+            return;
+        }
+
+        ApplyTheme();
+        ApplyLanguage();
+        message = ST("saved");
+    }
+
+    private void ResetSettings() {
+        fullName = "Nurbolat Otep";
+        email = "student@astanait.edu.kz";
+        studentId = "IT-2508";
+        program = "Computer Science";
+
+        theme = "Dark";
+        language = "English";
+        timeZone = "Asia/Almaty";
+
+        semester = "2nd Semester";
+        academicYear = "2026-2027";
+        gpaScale = "4.0";
+
+        assignmentNotifications = true;
+        examNotifications = true;
+        deadlineNotifications = true;
+        weeklySummary = false;
+
+        ApplyTheme();
+        ApplyLanguage();
+
+        message = ST("reset_done");
+    }
+
+    private string ST(string key) {
+        var ru = new Dictionary<string, string> {
+            ["title"] = "Настройки",
+            ["subtitle"] = "Управляйте своим аккаунтом и предпочтениями.",
+            ["profile"] = "Профиль",
+            ["profile_desc"] = "Измените личную информацию.",
+            ["full_name"] = "Полное имя",
+            ["email"] = "Электронная почта",
+            ["student_id"] = "ID студента",
+            ["program"] = "Образовательная программа",
+            ["appearance"] = "Внешний вид",
+            ["appearance_desc"] = "Настройте оформление приложения.",
+            ["theme"] = "Тема оформления",
+            ["dark_desc"] = "Тёмное оформление",
+            ["light_desc"] = "Светлое оформление",
+            ["notifications"] = "Уведомления",
+            ["notifications_desc"] = "Управляйте уведомлениями.",
+            ["assignment_reminders"] = "Напоминания о заданиях",
+            ["assignment_reminders_desc"] = "Напоминания о предстоящих заданиях.",
+            ["exam_reminders"] = "Напоминания об экзаменах",
+            ["exam_reminders_desc"] = "Уведомления перед экзаменами.",
+            ["deadline_alerts"] = "Уведомления о сроках",
+            ["deadline_alerts_desc"] = "Напоминания о приближающихся сроках.",
+            ["weekly_summary"] = "Еженедельный отчёт",
+            ["weekly_summary_desc"] = "Сводка учебного прогресса за неделю.",
+            ["language_region"] = "Язык и регион",
+            ["language_desc"] = "Выберите язык и часовой пояс.",
+            ["language"] = "Язык приложения",
+            ["timezone"] = "Часовой пояс",
+            ["language_note"] = "Язык меню и этой страницы изменяется сразу.",
+            ["academic"] = "Учебные настройки",
+            ["academic_desc"] = "Настройте учебную информацию.",
+            ["semester"] = "Семестр",
+            ["academic_year"] = "Учебный год",
+            ["gpa_scale"] = "Шкала GPA",
+            ["account"] = "Аккаунт",
+            ["account_desc"] = "Состояние аккаунта.",
+            ["active"] = "Аккаунт активен",
+            ["active_desc"] = "Всё работает нормально.",
+            ["reset"] = "Сбросить",
+            ["changes_note"] = "Не забудьте сохранить изменения.",
+            ["save"] = "Сохранить изменения",
+            ["saved"] = "Настройки применены!",
+            ["reset_done"] = "Настройки сброшены.",
+            ["validation_error"] = "Проверьте имя и адрес электронной почты."
+        };
+
+        var kk = new Dictionary<string, string> {
+            ["title"] = "Баптаулар",
+            ["subtitle"] = "Аккаунт пен қолданба параметрлерін басқарыңыз.",
+            ["profile"] = "Профиль",
+            ["profile_desc"] = "Жеке ақпаратыңызды өзгертіңіз.",
+            ["full_name"] = "Толық аты-жөні",
+            ["email"] = "Электрондық пошта",
+            ["student_id"] = "Студент ID",
+            ["program"] = "Білім беру бағдарламасы",
+            ["appearance"] = "Сыртқы көрініс",
+            ["appearance_desc"] = "Қолданбаның көрінісін реттеңіз.",
+            ["theme"] = "Тақырып",
+            ["dark_desc"] = "Қараңғы тақырып",
+            ["light_desc"] = "Жарық тақырып",
+            ["notifications"] = "Хабарландырулар",
+            ["notifications_desc"] = "Хабарландыруларды басқарыңыз.",
+            ["assignment_reminders"] = "Тапсырма еске салғыштары",
+            ["assignment_reminders_desc"] = "Алдағы тапсырмалар туралы еске салу.",
+            ["exam_reminders"] = "Емтихан еске салғыштары",
+            ["exam_reminders_desc"] = "Емтихан алдында хабарлау.",
+            ["deadline_alerts"] = "Мерзім туралы ескертулер",
+            ["deadline_alerts_desc"] = "Жақындаған мерзімдер туралы ескерту.",
+            ["weekly_summary"] = "Апталық есеп",
+            ["weekly_summary_desc"] = "Апталық оқу үлгерімінің есебі.",
+            ["language_region"] = "Тіл және аймақ",
+            ["language_desc"] = "Тіл мен уақыт белдеуін таңдаңыз.",
+            ["language"] = "Қолданба тілі",
+            ["timezone"] = "Уақыт белдеуі",
+            ["language_note"] = "Мәзір мен осы беттің тілі бірден өзгереді.",
+            ["academic"] = "Оқу параметрлері",
+            ["academic_desc"] = "Оқу ақпаратыңызды реттеңіз.",
+            ["semester"] = "Семестр",
+            ["academic_year"] = "Оқу жылы",
+            ["gpa_scale"] = "GPA шкаласы",
+            ["account"] = "Аккаунт",
+            ["account_desc"] = "Аккаунт күйі.",
+            ["active"] = "Аккаунт белсенді",
+            ["active_desc"] = "Барлығы дұрыс жұмыс істеп тұр.",
+            ["reset"] = "Қалпына келтіру",
+            ["changes_note"] = "Өзгерістерді сақтауды ұмытпаңыз.",
+            ["save"] = "Өзгерістерді сақтау",
+            ["saved"] = "Баптаулар қолданылды!",
+            ["reset_done"] = "Баптаулар қалпына келтірілді.",
+            ["validation_error"] = "Атыңыз бен электрондық поштаңызды тексеріңіз."
+        };
+
+        if (language == "Русский" && ru.TryGetValue(key, out var russian))
+            return russian;
+
+        if (language == "Қазақша" && kk.TryGetValue(key, out var kazakh))
+            return kazakh;
+
+        var en = new Dictionary<string, string> {
+            ["title"] = "Settings",
+            ["subtitle"] = "Manage your account and application preferences.",
+            ["profile"] = "Profile Settings",
+            ["profile_desc"] = "Update your personal information.",
+            ["full_name"] = "Full Name",
+            ["email"] = "Email Address",
+            ["student_id"] = "Student ID",
+            ["program"] = "Study Program",
+            ["appearance"] = "Appearance",
+            ["appearance_desc"] = "Customize how StudentPlanner looks.",
+            ["theme"] = "Theme",
+            ["dark_desc"] = "Dark appearance",
+            ["light_desc"] = "Light appearance",
+            ["notifications"] = "Notifications",
+            ["notifications_desc"] = "Control which notifications you receive.",
+            ["assignment_reminders"] = "Assignment Reminders",
+            ["assignment_reminders_desc"] = "Get reminded about upcoming assignments.",
+            ["exam_reminders"] = "Exam Reminders",
+            ["exam_reminders_desc"] = "Receive notifications before exams.",
+            ["deadline_alerts"] = "Deadline Alerts",
+            ["deadline_alerts_desc"] = "Get notified about approaching deadlines.",
+            ["weekly_summary"] = "Weekly Summary",
+            ["weekly_summary_desc"] = "Receive a weekly study progress summary.",
+            ["language_region"] = "Language & Region",
+            ["language_desc"] = "Set your language and regional preferences.",
+            ["language"] = "Application Language",
+            ["timezone"] = "Time Zone",
+            ["language_note"] = "The menu and this page change language immediately.",
+            ["academic"] = "Academic Preferences",
+            ["academic_desc"] = "Configure your academic information.",
+            ["semester"] = "Current Semester",
+            ["academic_year"] = "Academic Year",
+            ["gpa_scale"] = "GPA Scale",
+            ["account"] = "Account",
+            ["account_desc"] = "Account status.",
+            ["active"] = "Account Active",
+            ["active_desc"] = "Everything is working normally.",
+            ["reset"] = "Reset Settings",
+            ["changes_note"] = "Remember to save your changes.",
+            ["save"] = "Save Changes",
+            ["saved"] = "Settings applied!",
+            ["reset_done"] = "Settings have been reset.",
+            ["validation_error"] = "Please check your name and email address."
+        };
+
+        return en.TryGetValue(key, out var english) ? english : key;
+    }
+}

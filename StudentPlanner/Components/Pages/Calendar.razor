@@ -1,0 +1,606 @@
+﻿@page "/calendar"
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>Calendar | StudentPlanner</PageTitle>
+
+<div class="calendar-page">
+
+    <!-- HEADER -->
+    <div class="calendar-heading">
+        <div>
+            <span class="page-eyebrow">ACADEMIC WORKSPACE</span>
+            <h1>Academic Calendar</h1>
+            <p>Manage your classes, exams and assignment deadlines.</p>
+        </div>
+
+        <button class="calendar-add-button" @onclick="OpenCreateModal">
+            + Add Event
+        </button>
+    </div>
+
+    <!-- STATISTICS -->
+    <div class="calendar-stats">
+
+        <div class="calendar-stat">
+            <div class="stat-icon purple-bg">▦</div>
+            <div>
+                <span>Total Events</span>
+                <strong>@events.Count</strong>
+            </div>
+        </div>
+
+        <div class="calendar-stat">
+            <div class="stat-icon blue-bg">▤</div>
+            <div>
+                <span>Classes</span>
+                <strong>@CountType("Class")</strong>
+            </div>
+        </div>
+
+        <div class="calendar-stat">
+            <div class="stat-icon orange-bg">◷</div>
+            <div>
+                <span>Exams</span>
+                <strong>@CountType("Exam")</strong>
+            </div>
+        </div>
+
+        <div class="calendar-stat">
+            <div class="stat-icon green-bg">✓</div>
+            <div>
+                <span>Assignments</span>
+                <strong>@CountType("Assignment")</strong>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- CALENDAR -->
+    <section class="calendar-card">
+
+        <div class="calendar-toolbar">
+
+            <div class="month-navigation">
+                <button class="month-arrow"
+                        @onclick="PreviousMonth"
+                        title="Previous month">
+                    ‹
+                </button>
+
+                <h2>@DisplayedMonth.ToString("MMMM yyyy")</h2>
+
+                <button class="month-arrow"
+                        @onclick="NextMonth"
+                        title="Next month">
+                    ›
+                </button>
+            </div>
+
+            <button class="today-button" @onclick="GoToToday">
+                Today
+            </button>
+
+        </div>
+
+        <!-- LEGEND -->
+        <div class="calendar-legend">
+            <span><i class="legend-dot class-dot"></i> Classes</span>
+            <span><i class="legend-dot exam-dot"></i> Exams</span>
+            <span><i class="legend-dot assignment-dot"></i> Assignments</span>
+            <span><i class="legend-dot personal-dot"></i> Personal</span>
+        </div>
+
+        <!-- WEEKDAYS -->
+        <div class="calendar-grid">
+
+            @foreach (var weekday in Weekdays) {
+                <div class="weekday">
+                    @weekday
+                </div>
+            }
+
+            <!-- DAYS -->
+            @foreach (var day in CalendarDays) {
+                var dayEvents = events
+                    .Where(e => e.Date.Date == day.Date)
+                    .OrderBy(e => e.Time)
+                    .ToList();
+
+                <button type="button"
+                        @key="day"
+                        class="calendar-day
+                    @(day.Month != DisplayedMonth.Month ? "other-month" : "")
+                    @(day.Date == DateTime.Today ? "today-cell" : "")
+                    @(day.Date == selectedDate.Date ? "selected-day" : "")"
+                        @onclick="() => SelectDate(day)">
+
+                    <span class="day-number">
+                        @day.Day
+                    </span>
+
+                    <div class="day-events">
+
+                        @foreach (var item in dayEvents.Take(3)) {
+                            <span class="calendar-event @EventTypeClass(item.Type)"
+                                  title="@item.Title">
+                                @item.Title
+                            </span>
+                        }
+
+                        @if (dayEvents.Count > 3) {
+                            <span class="more-events">
+                                +@(dayEvents.Count - 3) more
+                            </span>
+                        }
+
+                    </div>
+
+                </button>
+            }
+
+        </div>
+
+    </section>
+
+    <!-- SELECTED DAY EVENTS -->
+    <section class="selected-events-card">
+
+        <div class="selected-events-heading">
+            <div>
+                <span class="page-eyebrow">DAILY SCHEDULE</span>
+                <h2>@selectedDate.ToString("dddd, MMMM dd, yyyy")</h2>
+                <p>Your scheduled academic activities</p>
+            </div>
+
+            <button class="small-add-button"
+                    @onclick="() => OpenCreateModal()">
+                + Add Event
+            </button>
+        </div>
+
+        @if (!EventsForSelectedDate.Any()) {
+            <div class="no-events">
+                <span>▦</span>
+                <h3>No events scheduled</h3>
+                <p>You have no activities planned for this day.</p>
+
+                <button class="small-add-button"
+                        @onclick="OpenCreateModal">
+                    Create an event
+                </button>
+            </div>
+        } else {
+            <div class="event-list">
+
+                @foreach (var item in EventsForSelectedDate) {
+                    <div class="event-row" @key="item.Id">
+
+                        <div class="event-time">
+                            <strong>@item.Time</strong>
+                            <span>@item.Type</span>
+                        </div>
+
+                        <div class="event-color-bar @EventTypeClass(item.Type)"></div>
+
+                        <div class="event-information">
+                            <strong>@item.Title</strong>
+                            <span>@item.Course</span>
+
+                            @if (!string.IsNullOrWhiteSpace(item.Description)) {
+                                <p>@item.Description</p>
+                            }
+                        </div>
+
+                        <div class="event-actions">
+
+                            <button class="event-action edit-event"
+                                    title="Edit event"
+                                    @onclick="() => EditEvent(item)">
+                                ✎
+                            </button>
+
+                            <button class="event-action delete-event"
+                                    title="Delete event"
+                                    @onclick="() => DeleteEvent(item.Id)">
+                                🗑
+                            </button>
+
+                        </div>
+
+                    </div>
+                }
+
+            </div>
+        }
+
+    </section>
+
+</div>
+
+<!-- CREATE / EDIT MODAL -->
+@if (showModal) {
+    <div class="calendar-modal-overlay" @onclick="CloseModal">
+
+        <div class="calendar-modal" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+
+                <div>
+                    <span class="page-eyebrow">EVENT MANAGEMENT</span>
+
+                    <h2>
+                        @(isEditing ? "Edit Event" : "Create Event")
+                    </h2>
+
+                    <p>Enter the details of your academic event.</p>
+                </div>
+
+                <button class="calendar-modal-close"
+                        @onclick="CloseModal">
+                    ×
+                </button>
+
+            </div>
+
+            <EditForm Model="formModel" OnValidSubmit="SaveEvent">
+
+                <DataAnnotationsValidator />
+
+                <div class="calendar-form-group">
+                    <label>Event Title *</label>
+
+                    <InputText class="calendar-input"
+                               @bind-Value="formModel.Title"
+                               placeholder="e.g. Database Management Exam" />
+
+                    <ValidationMessage For="@(() => formModel.Title)" />
+                </div>
+
+                <div class="calendar-form-group">
+                    <label>Course / Subject *</label>
+
+                    <InputText class="calendar-input"
+                               @bind-Value="formModel.Course"
+                               placeholder="e.g. DBMS" />
+
+                    <ValidationMessage For="@(() => formModel.Course)" />
+                </div>
+
+                <div class="calendar-form-row">
+
+                    <div class="calendar-form-group">
+                        <label>Date *</label>
+
+                        <InputDate class="calendar-input"
+                                   @bind-Value="formModel.Date" />
+                    </div>
+
+                    <div class="calendar-form-group">
+                        <label>Time</label>
+
+                        <InputText class="calendar-input"
+                                   @bind-Value="formModel.Time"
+                                   type="time" />
+                    </div>
+
+                </div>
+
+                <div class="calendar-form-group">
+                    <label>Event Type</label>
+
+                    <InputSelect class="calendar-input"
+                                 @bind-Value="formModel.Type">
+
+                        <option value="Class">Class</option>
+                        <option value="Exam">Exam</option>
+                        <option value="Assignment">Assignment</option>
+                        <option value="Personal">Personal</option>
+
+                    </InputSelect>
+                </div>
+
+                <div class="calendar-form-group">
+                    <label>Description</label>
+
+                    <InputTextArea class="calendar-input calendar-textarea"
+                                   @bind-Value="formModel.Description"
+                                   placeholder="Additional information..." />
+                </div>
+
+                <div class="calendar-modal-actions">
+
+                    <button type="button"
+                            class="calendar-cancel-button"
+                            @onclick="CloseModal">
+                        Cancel
+                    </button>
+
+                    <button type="submit"
+                            class="calendar-add-button">
+                        @(isEditing ? "Save Changes" : "Create Event")
+                    </button>
+
+                </div>
+
+            </EditForm>
+
+        </div>
+
+    </div>
+}
+
+@code {
+
+    // EVENT MODEL
+
+    public class CalendarEvent {
+        public int Id { get; set; }
+
+        [Required(ErrorMessage = "Event title is required.")]
+        [StringLength(100, MinimumLength = 3,
+            ErrorMessage = "Title must contain 3-100 characters.")]
+        public string Title { get; set; } = "";
+
+        [Required(ErrorMessage = "Course or subject is required.")]
+        public string Course { get; set; } = "";
+
+        public DateTime Date { get; set; } = DateTime.Today;
+
+        public string Time { get; set; } = "09:00";
+
+        public string Type { get; set; } = "Class";
+
+        [StringLength(500)]
+        public string Description { get; set; } = "";
+    }
+
+    // MOCK DATA
+
+    private List<CalendarEvent> events = new()
+    {
+        new()
+        {
+            Id = 1,
+            Title = "Database Lecture",
+            Course = "DBMS",
+            Date = DateTime.Today,
+            Time = "09:00",
+            Type = "Class",
+            Description = "Database normalization and SQL."
+        },
+
+        new()
+        {
+            Id = 2,
+            Title = "OOP Workshop",
+            Course = "Programming",
+            Date = DateTime.Today.AddDays(1),
+            Time = "11:00",
+            Type = "Class",
+            Description = "Object-oriented programming practice."
+        },
+
+        new()
+        {
+            Id = 3,
+            Title = "Database Exam",
+            Course = "DBMS",
+            Date = DateTime.Today.AddDays(3),
+            Time = "10:00",
+            Type = "Exam",
+            Description = "Midterm examination."
+        },
+
+        new()
+        {
+            Id = 4,
+            Title = "English Presentation",
+            Course = "English",
+            Date = DateTime.Today.AddDays(5),
+            Time = "14:00",
+            Type = "Assignment",
+            Description = "Final English presentation."
+        },
+
+        new()
+        {
+            Id = 5,
+            Title = "Algorithms Lecture",
+            Course = "ADS",
+            Date = DateTime.Today.AddDays(7),
+            Time = "13:00",
+            Type = "Class",
+            Description = "Algorithms and data structures."
+        },
+
+        new()
+        {
+            Id = 6,
+            Title = "Project Deadline",
+            Course = "Web Development",
+            Date = DateTime.Today.AddDays(10),
+            Time = "23:59",
+            Type = "Assignment",
+            Description = "Submit the Student Planner project."
+        },
+
+        new()
+        {
+            Id = 7,
+            Title = "Study Session",
+            Course = "Personal",
+            Date = DateTime.Today.AddDays(2),
+            Time = "17:00",
+            Type = "Personal",
+            Description = "Independent study time."
+        }
+    };
+
+    // STATE
+
+    private DateTime DisplayedMonth =
+        new(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    private DateTime selectedDate = DateTime.Today;
+
+    private bool showModal = false;
+    private bool isEditing = false;
+
+    private int editingId;
+
+    private CalendarEvent formModel = new();
+
+    private readonly string[] Weekdays =
+    {
+        "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"
+    };
+
+    // CALENDAR DAYS
+
+    private IEnumerable<DateTime> CalendarDays {
+        get {
+            var firstDay = DisplayedMonth;
+
+            int offset = ((int)firstDay.DayOfWeek + 6) % 7;
+
+            var startDate = firstDay.AddDays(-offset);
+
+            return Enumerable.Range(0, 42)
+                .Select(i => startDate.AddDays(i));
+        }
+    }
+
+    // SELECTED DATE EVENTS
+
+    private IEnumerable<CalendarEvent> EventsForSelectedDate =>
+        events
+            .Where(e => e.Date.Date == selectedDate.Date)
+            .OrderBy(e => e.Time);
+
+    // STATISTICS
+
+    private int CountType(string type) {
+        return events.Count(e => e.Type == type);
+    }
+
+    // NAVIGATION
+
+    private void PreviousMonth() {
+        DisplayedMonth = DisplayedMonth.AddMonths(-1);
+    }
+
+    private void NextMonth() {
+        DisplayedMonth = DisplayedMonth.AddMonths(1);
+    }
+
+    private void GoToToday() {
+        DisplayedMonth = new DateTime(
+            DateTime.Today.Year,
+            DateTime.Today.Month,
+            1
+        );
+
+        selectedDate = DateTime.Today;
+    }
+
+    // SELECT DATE
+
+    private void SelectDate(DateTime day) {
+        selectedDate = day.Date;
+
+        if (day.Month != DisplayedMonth.Month ||
+            day.Year != DisplayedMonth.Year) {
+            DisplayedMonth = new DateTime(day.Year, day.Month, 1);
+        }
+    }
+
+    // CREATE EVENT
+
+    private void OpenCreateModal() {
+        formModel = new CalendarEvent {
+            Date = selectedDate,
+            Time = "09:00",
+            Type = "Class"
+        };
+
+        isEditing = false;
+        showModal = true;
+    }
+
+    // EDIT EVENT
+
+    private void EditEvent(CalendarEvent item) {
+        editingId = item.Id;
+
+        formModel = new CalendarEvent {
+            Id = item.Id,
+            Title = item.Title,
+            Course = item.Course,
+            Date = item.Date,
+            Time = item.Time,
+            Type = item.Type,
+            Description = item.Description
+        };
+
+        isEditing = true;
+        showModal = true;
+    }
+
+    // SAVE EVENT
+
+    private void SaveEvent() {
+        if (isEditing) {
+            var existing = events.FirstOrDefault(
+                e => e.Id == editingId
+            );
+
+            if (existing != null) {
+                existing.Title = formModel.Title;
+                existing.Course = formModel.Course;
+                existing.Date = formModel.Date;
+                existing.Time = formModel.Time;
+                existing.Type = formModel.Type;
+                existing.Description = formModel.Description;
+            }
+        } else {
+            formModel.Id = events.Count == 0
+                ? 1
+                : events.Max(e => e.Id) + 1;
+
+            events.Add(formModel);
+        }
+
+        selectedDate = formModel.Date.Date;
+
+        DisplayedMonth = new DateTime(
+            selectedDate.Year,
+            selectedDate.Month,
+            1
+        );
+
+        CloseModal();
+    }
+
+    // DELETE EVENT
+
+    private void DeleteEvent(int id) {
+        var item = events.FirstOrDefault(e => e.Id == id);
+
+        if (item != null) {
+            events.Remove(item);
+        }
+    }
+
+    // CLOSE MODAL
+
+    private void CloseModal() {
+        showModal = false;
+    }
+
+    // EVENT CSS CLASS
+
+    private string EventTypeClass(string type) {
+        return type.ToLower();
+    }
+
+}

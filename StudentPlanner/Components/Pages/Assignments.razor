@@ -1,0 +1,538 @@
+﻿@page "/assignments"
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>Assignments | StudentPlanner</PageTitle>
+
+<div class="assignments-page">
+
+    <!-- HEADER -->
+    <div class="assignments-heading">
+        <div>
+            <span class="page-eyebrow">ACADEMIC WORKSPACE</span>
+            <h1>My Assignments</h1>
+            <p>Organize your tasks, track progress and never miss a deadline.</p>
+        </div>
+
+        <button class="add-button" @onclick="OpenCreateModal">
+            + Add Assignment
+        </button>
+    </div>
+
+    <!-- STATISTICS -->
+    <div class="assignment-stats">
+
+        <div class="assignment-stat">
+            <span class="mini-stat-icon purple-bg">▤</span>
+            <div>
+                <span>Total Assignments</span>
+                <strong>@assignments.Count</strong>
+            </div>
+        </div>
+
+        <div class="assignment-stat">
+            <span class="mini-stat-icon orange-bg">◷</span>
+            <div>
+                <span>Pending</span>
+                <strong>@CountStatus("Pending")</strong>
+            </div>
+        </div>
+
+        <div class="assignment-stat">
+            <span class="mini-stat-icon blue-bg">↻</span>
+            <div>
+                <span>In Progress</span>
+                <strong>@CountStatus("In Progress")</strong>
+            </div>
+        </div>
+
+        <div class="assignment-stat">
+            <span class="mini-stat-icon green-bg">✓</span>
+            <div>
+                <span>Completed</span>
+                <strong>@CountStatus("Completed")</strong>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ASSIGNMENTS TABLE -->
+    <section class="assignment-card">
+
+        <div class="assignment-toolbar">
+            <div>
+                <h2>All Tasks</h2>
+                <p>Manage your academic assignments</p>
+            </div>
+
+            <span class="results-count">
+                @FilteredAssignments.Count() results
+            </span>
+        </div>
+
+        <!-- SEARCH AND FILTERS -->
+        <div class="filters">
+
+            <div class="search-box">
+                <span>⌕</span>
+                <input type="text"
+                       placeholder="Search assignments..."
+                       @bind="searchTerm"
+                       @bind:event="oninput" />
+            </div>
+
+            <select class="filter-select" @bind="statusFilter">
+                <option value="All">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Completed">Completed</option>
+            </select>
+
+            <select class="filter-select" @bind="priorityFilter">
+                <option value="All">All Priorities</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+            </select>
+
+            <button class="reset-button" @onclick="ResetFilters">
+                Reset
+            </button>
+
+        </div>
+
+        <!-- TABLE -->
+        <div class="table-wrapper">
+
+            <table class="assignments-table">
+
+                <thead>
+                    <tr>
+                        <th>ASSIGNMENT</th>
+                        <th>COURSE</th>
+                        <th>DUE DATE</th>
+                        <th>PRIORITY</th>
+                        <th>STATUS</th>
+                        <th>ACTIONS</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    @foreach (var assignment in FilteredAssignments) {
+                        <tr @key="assignment.Id">
+
+                            <td>
+                                <div class="assignment-name">
+                                    <div class="assignment-file-icon">▤</div>
+
+                                    <div>
+                                        <strong>@assignment.Title</strong>
+                                        <span>@assignment.Description</span>
+                                    </div>
+                                </div>
+                            </td>
+
+                            <td>
+                                <span class="course-tag">
+                                    @assignment.Course
+                                </span>
+                            </td>
+
+                            <td>
+                                <span class="due-date">
+                                    @assignment.DueDate.ToString("MMM dd, yyyy")
+                                </span>
+                            </td>
+
+                            <td>
+                                <span class="priority-tag @PriorityClass(assignment.Priority)">
+                                    @assignment.Priority
+                                </span>
+                            </td>
+
+                            <td>
+                                <select class="status-select @StatusClass(assignment.Status)"
+                                        @bind="assignment.Status">
+
+                                    <option value="Pending">Pending</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Completed">Completed</option>
+
+                                </select>
+                            </td>
+
+                            <td>
+                                <div class="action-buttons">
+
+                                    <button class="action-button edit-action"
+                                            title="Edit assignment"
+                                            @onclick="() => EditAssignment(assignment)">
+                                        ✎
+                                    </button>
+
+                                    <button class="action-button delete-action"
+                                            title="Delete assignment"
+                                            @onclick="() => DeleteAssignment(assignment.Id)">
+                                        🗑
+                                    </button>
+
+                                </div>
+                            </td>
+
+                        </tr>
+                    }
+
+                </tbody>
+
+            </table>
+
+            @if (!FilteredAssignments.Any()) {
+                <div class="empty-state">
+                    <span>▤</span>
+                    <h3>No assignments found</h3>
+                    <p>Try changing your filters or create a new assignment.</p>
+
+                    <button class="add-button" @onclick="OpenCreateModal">
+                        + Add Assignment
+                    </button>
+                </div>
+            }
+
+        </div>
+
+        <div class="table-footer">
+            Showing @FilteredAssignments.Count() of @assignments.Count assignments
+        </div>
+
+    </section>
+
+</div>
+
+<!-- CREATE / EDIT MODAL -->
+@if (showModal) {
+    <div class="modal-overlay" @onclick="CloseModal">
+
+        <div class="assignment-modal" @onclick:stopPropagation="true">
+
+            <div class="modal-heading">
+
+                <div>
+                    <span class="page-eyebrow">TASK MANAGEMENT</span>
+
+                    <h2>
+                        @(isEditing ? "Edit Assignment" : "Create Assignment")
+                    </h2>
+
+                    <p>Enter the assignment details below.</p>
+                </div>
+
+                <button class="modal-close" @onclick="CloseModal">
+                    ×
+                </button>
+
+            </div>
+
+            <EditForm Model="formModel" OnValidSubmit="SaveAssignment">
+
+                <DataAnnotationsValidator />
+
+                <div class="form-group">
+                    <label>Assignment Title *</label>
+
+                    <InputText @bind-Value="formModel.Title"
+                               class="form-input"
+                               placeholder="e.g. Database Normalization" />
+
+                    <ValidationMessage For="@(() => formModel.Title)" />
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+
+                    <InputTextArea @bind-Value="formModel.Description"
+                                   class="form-input form-textarea"
+                                   placeholder="Describe your assignment..." />
+                </div>
+
+                <div class="form-group">
+                    <label>Course *</label>
+
+                    <InputText @bind-Value="formModel.Course"
+                               class="form-input"
+                               placeholder="e.g. Database Management" />
+
+                    <ValidationMessage For="@(() => formModel.Course)" />
+                </div>
+
+                <div class="form-row">
+
+                    <div class="form-group">
+                        <label>Due Date</label>
+
+                        <InputDate @bind-Value="formModel.DueDate"
+                                   class="form-input" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Priority</label>
+
+                        <InputSelect @bind-Value="formModel.Priority"
+                                     class="form-input">
+
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+
+                        </InputSelect>
+                    </div>
+
+                </div>
+
+                <div class="form-group">
+                    <label>Status</label>
+
+                    <InputSelect @bind-Value="formModel.Status"
+                                 class="form-input">
+
+                        <option value="Pending">Pending</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+
+                    </InputSelect>
+                </div>
+
+                <div class="modal-actions">
+
+                    <button type="button"
+                            class="cancel-button"
+                            @onclick="CloseModal">
+                        Cancel
+                    </button>
+
+                    <button type="submit" class="add-button">
+                        @(isEditing ? "Save Changes" : "Create Assignment")
+                    </button>
+
+                </div>
+
+            </EditForm>
+
+        </div>
+
+    </div>
+}
+
+@code {
+
+    // MODEL
+
+    public class AssignmentModel {
+        public int Id { get; set; }
+
+        [Required(ErrorMessage = "Assignment title is required.")]
+        [StringLength(100, MinimumLength = 3,
+            ErrorMessage = "Title must contain 3-100 characters.")]
+        public string Title { get; set; } = "";
+
+        [StringLength(500,
+            ErrorMessage = "Description cannot exceed 500 characters.")]
+        public string Description { get; set; } = "";
+
+        [Required(ErrorMessage = "Course is required.")]
+        public string Course { get; set; } = "";
+
+        public DateTime DueDate { get; set; } = DateTime.Today.AddDays(7);
+
+        public string Priority { get; set; } = "Medium";
+
+        public string Status { get; set; } = "Pending";
+    }
+
+    // MOCK DATA
+
+    private List<AssignmentModel> assignments = new()
+    {
+        new()
+        {
+            Id = 1,
+            Title = "Database Normalization",
+            Description = "Complete 1NF, 2NF and 3NF exercises.",
+            Course = "DBMS",
+            DueDate = DateTime.Today.AddDays(2),
+            Priority = "High",
+            Status = "Pending"
+        },
+
+        new()
+        {
+            Id = 2,
+            Title = "OOP Project Implementation",
+            Description = "Implement Java OOP project functionality.",
+            Course = "Programming",
+            DueDate = DateTime.Today.AddDays(4),
+            Priority = "Medium",
+            Status = "In Progress"
+        },
+
+        new()
+        {
+            Id = 3,
+            Title = "English Presentation",
+            Description = "Prepare the final English presentation.",
+            Course = "English",
+            DueDate = DateTime.Today.AddDays(6),
+            Priority = "Low",
+            Status = "Completed"
+        },
+
+        new()
+        {
+            Id = 4,
+            Title = "Algorithms Assignment",
+            Description = "Solve algorithmic programming problems.",
+            Course = "ADS",
+            DueDate = DateTime.Today.AddDays(8),
+            Priority = "High",
+            Status = "Pending"
+        },
+
+        new()
+        {
+            Id = 5,
+            Title = "Web Development Project",
+            Description = "Develop the Student Planner frontend.",
+            Course = "Web Development",
+            DueDate = DateTime.Today.AddDays(10),
+            Priority = "High",
+            Status = "In Progress"
+        }
+    };
+
+    // STATE
+
+    private string searchTerm = "";
+    private string statusFilter = "All";
+    private string priorityFilter = "All";
+
+    private bool showModal = false;
+    private bool isEditing = false;
+
+    private int editingId;
+
+    private AssignmentModel formModel = new();
+
+    // FILTERING
+
+    private IEnumerable<AssignmentModel> FilteredAssignments =>
+        assignments.Where(a =>
+            (string.IsNullOrWhiteSpace(searchTerm) ||
+             a.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+             a.Course.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+            &&
+            (statusFilter == "All" || a.Status == statusFilter)
+            &&
+            (priorityFilter == "All" || a.Priority == priorityFilter)
+        );
+
+    // STATISTICS
+
+    private int CountStatus(string status) {
+        return assignments.Count(a => a.Status == status);
+    }
+
+    // CREATE
+
+    private void OpenCreateModal() {
+        formModel = new AssignmentModel {
+            DueDate = DateTime.Today.AddDays(7),
+            Priority = "Medium",
+            Status = "Pending"
+        };
+
+        isEditing = false;
+        showModal = true;
+    }
+
+    // EDIT
+
+    private void EditAssignment(AssignmentModel assignment) {
+        editingId = assignment.Id;
+
+        formModel = new AssignmentModel {
+            Id = assignment.Id,
+            Title = assignment.Title,
+            Description = assignment.Description,
+            Course = assignment.Course,
+            DueDate = assignment.DueDate,
+            Priority = assignment.Priority,
+            Status = assignment.Status
+        };
+
+        isEditing = true;
+        showModal = true;
+    }
+
+    // SAVE
+
+    private void SaveAssignment() {
+        if (isEditing) {
+            var existing = assignments.FirstOrDefault(
+                a => a.Id == editingId
+            );
+
+            if (existing != null) {
+                existing.Title = formModel.Title;
+                existing.Description = formModel.Description;
+                existing.Course = formModel.Course;
+                existing.DueDate = formModel.DueDate;
+                existing.Priority = formModel.Priority;
+                existing.Status = formModel.Status;
+            }
+        } else {
+            formModel.Id = assignments.Count == 0
+                ? 1
+                : assignments.Max(a => a.Id) + 1;
+
+            assignments.Add(formModel);
+        }
+
+        CloseModal();
+    }
+
+    // DELETE
+
+    private void DeleteAssignment(int id) {
+        var assignment = assignments.FirstOrDefault(
+            a => a.Id == id
+        );
+
+        if (assignment != null) {
+            assignments.Remove(assignment);
+        }
+    }
+
+    // RESET FILTERS
+
+    private void ResetFilters() {
+        searchTerm = "";
+        statusFilter = "All";
+        priorityFilter = "All";
+    }
+
+    // CLOSE MODAL
+
+    private void CloseModal() {
+        showModal = false;
+    }
+
+    // CSS CLASSES
+
+    private string PriorityClass(string priority) {
+        return priority.ToLower();
+    }
+
+    private string StatusClass(string status) {
+        return status.ToLower().Replace(" ", "-");
+    }
+
+}

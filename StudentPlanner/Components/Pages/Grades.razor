@@ -1,7 +1,13 @@
-﻿@page "/grades"
+@page "/grades"
 @using System.ComponentModel.DataAnnotations
+@using GradeModel = StudentPlanner.Models.Grade
+@inject IUserPreferencesService Preferences
+@inject IGradeService GradeService
 
 <PageTitle>Grades & Analytics | StudentPlanner</PageTitle>
+@if (!string.IsNullOrWhiteSpace(errorMessage)) {
+    <ErrorBanner Message="@errorMessage" />
+}
 
 <div class="grades-page">
 
@@ -27,7 +33,7 @@
             <div class="grade-stat-icon purple">★</div>
             <div>
                 <span>Current GPA</span>
-                <strong>@CurrentGPA.ToString("0.00") <small>/ 4.00</small></strong>
+                <strong>@CurrentGPA.ToString("0.00") <small>/ @ScaleLimit.ToString("0.##")</small></strong>
             </div>
         </div>
 
@@ -93,7 +99,7 @@
 
                 <div>
                     <span>Academic Target</span>
-                    <strong>4.00 GPA</strong>
+                    <strong>@ScaleLimit.ToString("0.##") GPA</strong>
                 </div>
 
                 <div>
@@ -226,12 +232,12 @@
                 <span>⌕</span>
 
                 <input type="text"
-                       placeholder="Search by course or assessment..."
+                       placeholder="Search by course or assessment..." aria-label="Search grades"
                        @bind="searchTerm"
                        @bind:event="oninput" />
             </div>
 
-            <select class="grades-filter" @bind="letterFilter">
+            <select class="grades-filter" aria-label="Filter grades by letter" @bind="letterFilter">
                 <option value="All">All Grades</option>
                 <option value="A">A / A-</option>
                 <option value="B">B / B+ / B-</option>
@@ -239,6 +245,7 @@
                 <option value="D">D</option>
                 <option value="F">F</option>
             </select>
+            <select class="grades-filter" aria-label="Sort grades" @bind="sortBy"><option value="date">Sort: date</option><option value="course">Sort: course</option></select>
 
             <button class="grades-reset-button" @onclick="ResetFilters">
                 Reset
@@ -314,15 +321,12 @@
                                 <td>
                                     <div class="grade-actions">
 
-                                        <button title="Edit grade"
+                                        <button aria-label="Edit grade" title="Edit grade"
                                                 @onclick="() => EditGrade(grade)">
                                             ✎
                                         </button>
 
-                                        <button title="Delete grade"
-                                                @onclick="() => DeleteGrade(grade.Id)">
-                                            🗑
-                                        </button>
+                                        <ConfirmActionButton CssClass="grade-delete-action" AriaLabel="Delete grade" ConfirmationMessage="Delete this grade?" OnConfirmed="() => DeleteGrade(grade.Id)">🗑</ConfirmActionButton>
 
                                     </div>
                                 </td>
@@ -349,7 +353,7 @@
 @if (showModal) {
     <div class="grades-modal-overlay" @onclick="CloseModal">
 
-        <div class="grades-modal" @onclick:stopPropagation="true">
+        <div class="grades-modal" role="dialog" aria-modal="true" aria-labelledby="grade-dialog-title" tabindex="-1" @onkeydown="HandleModalKeyDown" @onclick:stopPropagation="true">
 
             <div class="grades-modal-header">
 
@@ -359,7 +363,7 @@
                     <p>Enter your academic assessment results.</p>
                 </div>
 
-                <button class="grades-close-button" @onclick="CloseModal">
+                <button class="grades-close-button" aria-label="Close grade form" @onclick="CloseModal">
                     ×
                 </button>
 
@@ -454,27 +458,12 @@
 
 @code {
 
-    // MODEL
+    private List<GradeModel> grades = [];
+    private string errorMessage = "";
 
-    public class GradeModel {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Course name is required.")]
-        [StringLength(100, MinimumLength = 2)]
-        public string Course { get; set; } = "";
-
-        [Required(ErrorMessage = "Assessment name is required.")]
-        [StringLength(100, MinimumLength = 2)]
-        public string Assessment { get; set; } = "";
-
-        [Range(typeof(decimal), "0", "100",
-            ErrorMessage = "Score must be between 0 and 100.")]
-        public decimal Score { get; set; }
-
-        [Range(1, 10, ErrorMessage = "Credits must be between 1 and 10.")]
-        public int Credits { get; set; } = 3;
-
-        public DateTime Date { get; set; } = DateTime.Today;
+    protected override async Task OnInitializedAsync() {
+        try { grades = await GradeService.GetAllAsync(); }
+        catch (Exception ex) { errorMessage = $"Could not load grades: {ex.Message}"; }
     }
 
     // DISTRIBUTION MODEL
@@ -486,75 +475,11 @@
         public decimal Percentage { get; set; }
     }
 
-    // MOCK DATA
-
-    private List<GradeModel> grades = new()
-    {
-        new()
-        {
-            Id = 1,
-            Course = "DBMS",
-            Assessment = "Midterm Exam",
-            Score = 95,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-15)
-        },
-
-        new()
-        {
-            Id = 2,
-            Course = "Programming",
-            Assessment = "OOP Project",
-            Score = 88,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-12)
-        },
-
-        new()
-        {
-            Id = 3,
-            Course = "English",
-            Assessment = "Final Presentation",
-            Score = 92,
-            Credits = 3,
-            Date = DateTime.Today.AddDays(-10)
-        },
-
-        new()
-        {
-            Id = 4,
-            Course = "ADS",
-            Assessment = "Algorithms Test",
-            Score = 78,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-7)
-        },
-
-        new()
-        {
-            Id = 5,
-            Course = "Web Development",
-            Assessment = "Frontend Project",
-            Score = 85,
-            Credits = 4,
-            Date = DateTime.Today.AddDays(-5)
-        },
-
-        new()
-        {
-            Id = 6,
-            Course = "Mathematics",
-            Assessment = "Final Exam",
-            Score = 68,
-            Credits = 4,
-            Date = DateTime.Today.AddDays(-2)
-        }
-    };
-
     // STATE
 
     private string searchTerm = "";
     private string letterFilter = "All";
+    private string sortBy = "date";
 
     private bool showModal = false;
     private bool isEditing = false;
@@ -574,11 +499,13 @@
             (letterFilter == "All" ||
              GetLetter(g.Score).StartsWith(letterFilter,
                  StringComparison.OrdinalIgnoreCase))
-        );
+        ).OrderBy(g => sortBy == "course" ? g.Course : g.Date.ToString("yyyy-MM-dd"));
 
     // GPA CALCULATION
     // Weighted by course credits.
 
+    private decimal ScaleLimit => Preferences.Current.GpaScale == "100" ? 100m : decimal.TryParse(Preferences.Current.GpaScale, out var scale) ? scale : 4m;
+    private decimal NormalizedGpa => ScaleLimit == 0 ? 0 : CurrentGPA / ScaleLimit * 4m;
     private decimal CurrentGPA {
         get {
             if (!grades.Any())
@@ -605,18 +532,18 @@
         grades.Sum(g => g.Credits);
 
     private decimal GpaPercentage =>
-        CurrentGPA / 4m * 100m;
+        ScaleLimit == 0 ? 0 : Math.Clamp(CurrentGPA / ScaleLimit * 100m, 0m, 100m);
 
     private string PerformanceLabel =>
-        CurrentGPA >= 3.7m ? "Excellent Performance!" :
-        CurrentGPA >= 3.0m ? "Good Performance!" :
-        CurrentGPA >= 2.0m ? "Satisfactory Performance" :
+        NormalizedGpa >= 3.7m ? "Excellent Performance!" :
+        NormalizedGpa >= 3.0m ? "Good Performance!" :
+        NormalizedGpa >= 2.0m ? "Satisfactory Performance" :
         grades.Any() ? "Needs Improvement" : "No Grades Yet";
 
     private string PerformanceDescription =>
-        CurrentGPA >= 3.7m ? "Keep up your excellent academic progress." :
-        CurrentGPA >= 3.0m ? "You are making good academic progress." :
-        CurrentGPA >= 2.0m ? "Keep working towards your academic goals." :
+        NormalizedGpa >= 3.7m ? "Keep up your excellent academic progress." :
+        NormalizedGpa >= 3.0m ? "You are making good academic progress." :
+        NormalizedGpa >= 2.0m ? "Keep working towards your academic goals." :
         grades.Any() ? "Focus on improving your academic results." :
         "Add your grades to see your progress.";
 
@@ -655,15 +582,17 @@
     // GPA SCALE
 
     private decimal GetGradePoint(decimal score) {
-        if (score >= 95) return 4.00m;
-        if (score >= 90) return 3.67m;
-        if (score >= 85) return 3.33m;
-        if (score >= 80) return 3.00m;
-        if (score >= 75) return 2.67m;
-        if (score >= 70) return 2.33m;
-        if (score >= 65) return 2.00m;
-        if (score >= 60) return 1.67m;
-        if (score >= 50) return 1.00m;
+        if (ScaleLimit == 100m) return score;
+        decimal factor = ScaleLimit / 4m;
+        if (score >= 95) return 4.00m * factor;
+        if (score >= 90) return 3.67m * factor;
+        if (score >= 85) return 3.33m * factor;
+        if (score >= 80) return 3.00m * factor;
+        if (score >= 75) return 2.67m * factor;
+        if (score >= 70) return 2.33m * factor;
+        if (score >= 65) return 2.00m * factor;
+        if (score >= 60) return 1.67m * factor;
+        if (score >= 50) return 1.00m * factor;
 
         return 0;
     }
@@ -723,36 +652,24 @@
 
     // SAVE
 
-    private void SaveGrade() {
-        if (isEditing) {
-            var existing = grades.FirstOrDefault(g => g.Id == editingId);
-
-            if (existing != null) {
-                existing.Course = formModel.Course;
-                existing.Assessment = formModel.Assessment;
-                existing.Score = formModel.Score;
-                existing.Credits = formModel.Credits;
-                existing.Date = formModel.Date;
-            }
-        } else {
-            formModel.Id = grades.Count == 0
-                ? 1
-                : grades.Max(g => g.Id) + 1;
-
-            grades.Add(formModel);
-        }
-
-        CloseModal();
+    private async Task SaveGrade() {
+        try {
+            if (isEditing) await GradeService.UpdateAsync(formModel);
+            else await GradeService.CreateAsync(formModel);
+            grades = await GradeService.GetAllAsync();
+            errorMessage = "";
+            CloseModal();
+        } catch (Exception ex) { errorMessage = $"Could not save grade: {ex.Message}"; }
     }
 
     // DELETE
 
-    private void DeleteGrade(int id) {
-        var grade = grades.FirstOrDefault(g => g.Id == id);
-
-        if (grade != null) {
-            grades.Remove(grade);
-        }
+    private async Task DeleteGrade(int id) {
+        try {
+            await GradeService.DeleteAsync(id);
+            grades = await GradeService.GetAllAsync();
+            errorMessage = "";
+        } catch (Exception ex) { errorMessage = $"Could not delete grade: {ex.Message}"; }
     }
 
     // FILTER RESET
@@ -761,6 +678,8 @@
         searchTerm = "";
         letterFilter = "All";
     }
+
+    private void HandleModalKeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") CloseModal(); }
 
     // CLOSE
 

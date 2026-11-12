@@ -1,7 +1,16 @@
-﻿@page "/"
+@page "/"
 @using System.Linq
+@inject IStudentService StudentService
+@inject IAssignmentService AssignmentService
+@inject ICourseService CourseService
+@inject IGradeService GradeService
+@inject IScheduleEventService ScheduleEventService
+@inject IUserPreferencesService Preferences
 
 <PageTitle>Dashboard | StudentPlanner</PageTitle>
+@if (!string.IsNullOrWhiteSpace(errorMessage)) {
+    <ErrorBanner Message="@errorMessage" />
+}
 
 <div class="dashboard">
 
@@ -9,7 +18,7 @@
     <div class="welcome-section">
         <div>
             <span class="welcome-label">STUDENT OVERVIEW</span>
-            <h1>Welcome back, Nurbolat! 👋</h1>
+            <h1>Welcome back, @StudentName! 👋</h1>
             <p>Here's what's happening with your studies today.</p>
         </div>
 
@@ -28,11 +37,11 @@
                 <span class="stat-trend">Academic</span>
             </div>
             <span class="stat-title">Current GPA</span>
-            <div class="stat-value">3.75 <span>/ 4.00</span></div>
+            <div class="stat-value">@CurrentGpa.ToString("0.00") <span>/ @ScaleLimit.ToString("0.##")</span></div>
             <div class="stat-progress">
-                <div class="progress-fill purple-fill" style="width:93.75%"></div>
+                <div class="progress-fill purple-fill" style="width:@GpaPercentage%"></div>
             </div>
-            <span class="stat-description">Based on mock grades</span>
+            <span class="stat-description">Calculated from shared grade records</span>
         </div>
 
         <div class="stat-card">
@@ -57,7 +66,7 @@
             <span class="stat-title">Pending Tasks</span>
             <div class="stat-value">@PendingCount</div>
             <div class="stat-progress">
-                <div class="progress-fill orange-fill" style="width:65%"></div>
+                <div class="progress-fill orange-fill" style="width:@PendingPercentage%"></div>
             </div>
             <span class="stat-description">Tasks waiting for completion</span>
         </div>
@@ -70,7 +79,7 @@
             <span class="stat-title">Active Courses</span>
             <div class="stat-value">@courses.Count</div>
             <div class="stat-progress">
-                <div class="progress-fill green-fill" style="width:75%"></div>
+                <div class="progress-fill green-fill" style="width:@ActiveCoursePercentage%"></div>
             </div>
             <span class="stat-description">Courses currently enrolled</span>
         </div>
@@ -95,17 +104,17 @@
 
                 @foreach (var task in assignments) {
                     <div class="task-item">
-                        <button class="task-check @(task.IsCompleted ? "checked" : "")"
+                        <button class="task-check @((task.Status == "Completed") ? "checked" : "")"
                                 @onclick="() => ToggleTask(task)"
                                 aria-label="Toggle task completion">
-                            @(task.IsCompleted ? "✓" : "")
+                            @((task.Status == "Completed") ? "✓" : "")
                         </button>
 
                         <div class="task-info">
-                            <strong class="@(task.IsCompleted ? "task-done" : "")">
+                            <strong class="@((task.Status == "Completed") ? "task-done" : "")">
                                 @task.Title
                             </strong>
-                            <span>@task.Course · @task.DueDate</span>
+                            <span>@task.Course · @task.DueDate.ToString("MMM dd")</span>
                         </div>
 
                         <span class="priority-badge @task.Priority.ToLower()">
@@ -141,8 +150,8 @@
             <div class="gpa-display">
                 <div class="gpa-circle">
                     <div>
-                        <strong>3.75</strong>
-                        <span>OUT OF 4.00</span>
+                        <strong>@CurrentGpa.ToString("0.00")</strong>
+                        <span>OUT OF @ScaleLimit.ToString("0.##")</span>
                     </div>
                 </div>
             </div>
@@ -154,12 +163,12 @@
 
             <div class="performance-row">
                 <span>Academic target</span>
-                <strong>4.00 GPA</strong>
+                <strong>@ScaleLimit.ToString("0.##") GPA</strong>
             </div>
 
             <div class="performance-row">
                 <span>Current performance</span>
-                <strong>93.75%</strong>
+                <strong>@GpaPercentage.ToString("0")%</strong>
             </div>
 
             <a href="/grades" class="full-link">View grade analytics →</a>
@@ -203,9 +212,9 @@
             <div class="section-heading">
                 <div>
                     <h2>Weekly Study Activity</h2>
-                    <p>Your planned study hours</p>
+                    <p>Events on your schedule this week</p>
                 </div>
-                <span class="weekly-total">18.5 hrs</span>
+                <span class="weekly-total">@WeeklyTotal.ToString("0") events</span>
             </div>
 
             <div class="weekly-chart">
@@ -224,11 +233,11 @@
 
             <div class="weekly-footer">
                 <span>Weekly study goal</span>
-                <strong>18.5 / 25 hours</strong>
+                <strong>@WeeklyTotal.ToString("0") scheduled events this week</strong>
             </div>
 
             <div class="progress-track">
-                <div class="progress-fill green-fill" style="width:74%"></div>
+                <div class="progress-fill green-fill" style="width:@Math.Min(WeeklyTotal / 25d * 100d, 100d)%"></div>
             </div>
 
         </section>
@@ -268,78 +277,77 @@
 
 </div>
 
+
 @code {
-    private class AssignmentItem {
-        public string Title { get; set; } = "";
-        public string Course { get; set; } = "";
-        public string DueDate { get; set; } = "";
-        public string Priority { get; set; } = "";
-        public bool IsCompleted { get; set; }
+    private Student? student;
+    private string errorMessage = "";
+    private List<Assignment> assignmentRecords = [];
+    private List<Course> courseRecords = [];
+    private List<Grade> gradeRecords = [];
+    private List<ScheduleEvent> scheduleRecords = [];
+    private List<Assignment> assignments = [];
+    private List<DeadlineItem> deadlines = [];
+    private List<CourseItem> courses = [];
+    private List<ActivityItem> weeklyActivity = [];
+
+    private string StudentName => string.IsNullOrWhiteSpace(student?.FullName) ? "Student" : student.FullName;
+    private int CompletedCount => assignments.Count(a => a.Status == "Completed");
+    private int PendingCount => assignments.Count(a => a.Status != "Completed");
+    private int CompletionPercentage => assignments.Count == 0 ? 0 : (int)Math.Round(CompletedCount * 100d / assignments.Count);
+    private decimal ScaleLimit => Preferences.Current.GpaScale == "100" ? 100m : decimal.TryParse(Preferences.Current.GpaScale, out var scale) ? scale : 4m;
+    private decimal CurrentGpa {
+        get {
+            var totalCredits = gradeRecords.Sum(g => g.Credits);
+            return totalCredits <= 0 ? 0 : gradeRecords.Sum(g => (ScaleLimit == 100m ? g.Score : GradePoint(g.Score) * ScaleLimit / 4m) * g.Credits) / totalCredits;
+        }
+    }
+    private decimal GpaPercentage => ScaleLimit == 0 ? 0 : Math.Clamp(CurrentGpa / ScaleLimit * 100m, 0m, 100m);
+    private int PendingPercentage => assignments.Count == 0 ? 0 : (int)Math.Round(PendingCount * 100d / assignments.Count);
+    private int ActiveCoursePercentage => courseRecords.Count == 0 ? 0 : (int)Math.Round(courseRecords.Count(c => c.IsActive) * 100d / courseRecords.Count);
+    private double WeeklyTotal => weeklyActivity.Sum(x => x.Hours);
+
+    protected override async Task OnInitializedAsync() {
+        try {
+            student = await StudentService.GetCurrentAsync();
+            assignmentRecords = await AssignmentService.GetAllAsync();
+            courseRecords = await CourseService.GetAllAsync();
+            gradeRecords = await GradeService.GetAllAsync();
+            scheduleRecords = await ScheduleEventService.GetAllAsync();
+            RefreshData();
+        } catch (Exception ex) { errorMessage = $"Could not load dashboard data: {ex.Message}"; }
     }
 
-    private class DeadlineItem {
-        public string Day { get; set; } = "";
-        public string Month { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string Course { get; set; } = "";
-        public string Priority { get; set; } = "";
+    private void RefreshData() {
+        assignments = assignmentRecords.OrderBy(a => a.DueDate).ToList();
+        deadlines = assignments.Where(a => a.Status != "Completed").Take(4)
+            .Select(a => new DeadlineItem { Day = a.DueDate.ToString("dd"), Month = a.DueDate.ToString("MMM").ToUpperInvariant(), Title = a.Title, Course = a.Course, Priority = a.Priority }).ToList();
+        courses = courseRecords.Where(c => c.IsActive).Select(c => new CourseItem {
+            Icon = c.Color == "blue" ? "💻" : c.Color == "green" ? "📊" : "🗄️",
+            Name = c.Name, Code = c.Code,
+            Grade = gradeRecords.Where(g => g.Course == c.Code || g.Course == c.Name).Select(g => (string?)g.Score.ToString("0") + "%").FirstOrDefault() ?? "—"
+        }).ToList();
+        var weekStart = DateTime.Today.AddDays(-(((int)DateTime.Today.DayOfWeek + 6) % 7));
+        weeklyActivity = Enumerable.Range(0, 7).Select(i => new ActivityItem {
+            Day = weekStart.AddDays(i).ToString("ddd").ToUpperInvariant(),
+            Hours = scheduleRecords.Count(e => e.Date.Date == weekStart.AddDays(i).Date)
+        }).ToList();
     }
 
-    private class CourseItem {
-        public string Icon { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string Code { get; set; } = "";
-        public string Grade { get; set; } = "";
+    private static decimal GradePoint(decimal score) =>
+        score >= 95 ? 4.00m : score >= 90 ? 3.67m : score >= 85 ? 3.33m : score >= 80 ? 3.00m :
+        score >= 75 ? 2.67m : score >= 70 ? 2.33m : score >= 65 ? 2.00m : score >= 60 ? 1.67m : score >= 50 ? 1.00m : 0m;
+
+    private async Task ToggleTask(Assignment task) {
+        try {
+            task.Status = task.Status == "Completed" ? "Pending" : "Completed";
+            await AssignmentService.UpdateAsync(task);
+            assignmentRecords = await AssignmentService.GetAllAsync();
+            RefreshData();
+            errorMessage = "";
+        } catch (Exception ex) { errorMessage = $"Could not update assignment: {ex.Message}"; }
     }
 
-    private class ActivityItem {
-        public string Day { get; set; } = "";
-        public double Hours { get; set; }
-    }
-
-    private List<AssignmentItem> assignments = new()
-    {
-        new() { Title = "Database Normalization", Course = "DBMS", DueDate = "Due Nov 12", Priority = "High" },
-        new() { Title = "OOP Project Implementation", Course = "Programming", DueDate = "Due Nov 14", Priority = "Medium" },
-        new() { Title = "English Presentation", Course = "English", DueDate = "Due Nov 16", Priority = "Low", IsCompleted = true },
-        new() { Title = "Algorithms Assignment", Course = "ADS", DueDate = "Due Nov 18", Priority = "High" }
-    };
-
-    private List<DeadlineItem> deadlines = new()
-    {
-        new() { Day = "12", Month = "NOV", Title = "Database Normalization", Course = "DBMS", Priority = "High" },
-        new() { Day = "14", Month = "NOV", Title = "OOP Project", Course = "Programming", Priority = "Medium" },
-        new() { Day = "16", Month = "NOV", Title = "English Presentation", Course = "English", Priority = "Low" }
-    };
-
-    private List<CourseItem> courses = new()
-    {
-        new() { Icon = "💻", Name = "Object Oriented Programming", Code = "CS201", Grade = "A-" },
-        new() { Icon = "🗄️", Name = "Database Management", Code = "CS202", Grade = "A" },
-        new() { Icon = "📊", Name = "Algorithms & Data Structures", Code = "CS203", Grade = "B+" },
-        new() { Icon = "🌐", Name = "English", Code = "ENG201", Grade = "A-" }
-    };
-
-    private List<ActivityItem> weeklyActivity = new()
-    {
-        new() { Day = "MON", Hours = 3.5 },
-        new() { Day = "TUE", Hours = 5 },
-        new() { Day = "WED", Hours = 2.5 },
-        new() { Day = "THU", Hours = 4 },
-        new() { Day = "FRI", Hours = 1.5 },
-        new() { Day = "SAT", Hours = 2 },
-        new() { Day = "SUN", Hours = 0 }
-    };
-
-    private int CompletedCount => assignments.Count(x => x.IsCompleted);
-    private int PendingCount => assignments.Count(x => !x.IsCompleted);
-
-    private int CompletionPercentage =>
-        assignments.Count == 0
-            ? 0
-            : (int)Math.Round((double)CompletedCount / assignments.Count * 100);
-
-    private void ToggleTask(AssignmentItem task) {
-        task.IsCompleted = !task.IsCompleted;
-    }
+    private sealed class DeadlineItem { public string Day { get; set; } = ""; public string Month { get; set; } = ""; public string Title { get; set; } = ""; public string Course { get; set; } = ""; public string Priority { get; set; } = ""; }
+    private sealed class CourseItem { public string Icon { get; set; } = ""; public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Grade { get; set; } = ""; }
+    private sealed class ActivityItem { public string Day { get; set; } = ""; public double Hours { get; set; } }
 }

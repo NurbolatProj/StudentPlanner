@@ -1,5 +1,8 @@
-﻿@page "/settings"
+@page "/settings"
 @using StudentPlanner.Components.Layout
+@using System.Net.Mail
+@inject IUserPreferencesService Preferences
+@inject IStudentService StudentService
 
 <PageTitle>Settings</PageTitle>
 
@@ -15,7 +18,7 @@
     </div>
 
     @if (!string.IsNullOrWhiteSpace(message)) {
-        <div class="settings-message">@message</div>
+        <div class="settings-message" role="status">@message</div>
     }
 
     <div class="settings-grid">
@@ -38,23 +41,23 @@
             </div>
 
             <div class="form-group">
-                <label>@ST("full_name")</label>
-                <input @bind="fullName" />
+                <label for="settings-full-name">@ST("full_name")</label>
+                <input id="settings-full-name" @bind="fullName" autocomplete="name" />
             </div>
 
             <div class="form-group">
-                <label>@ST("email")</label>
-                <input type="email" @bind="email" />
+                <label for="settings-email">@ST("email")</label>
+                <input id="settings-email" type="email" @bind="email" aria-label="Email address" autocomplete="email" />
             </div>
 
             <div class="form-group">
-                <label>@ST("student_id")</label>
-                <input @bind="studentId" />
+                <label for="settings-student-id">@ST("student_id")</label>
+                <input id="settings-student-id" @bind="studentId" />
             </div>
 
             <div class="form-group">
-                <label>@ST("program")</label>
-                <input @bind="program" />
+                <label for="settings-program">@ST("program")</label>
+                <input id="settings-program" @bind="program" />
             </div>
         </section>
 
@@ -109,7 +112,7 @@
                     <p>@ST("assignment_reminders_desc")</p>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" @bind="assignmentNotifications" />
+                    <input type="checkbox" aria-label="Assignment reminders" @bind="assignmentNotifications" />
                     <span class="switch-slider"></span>
                 </label>
             </div>
@@ -120,7 +123,7 @@
                     <p>@ST("exam_reminders_desc")</p>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" @bind="examNotifications" />
+                    <input type="checkbox" aria-label="Exam reminders" @bind="examNotifications" />
                     <span class="switch-slider"></span>
                 </label>
             </div>
@@ -131,7 +134,7 @@
                     <p>@ST("deadline_alerts_desc")</p>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" @bind="deadlineNotifications" />
+                    <input type="checkbox" aria-label="Deadline alerts" @bind="deadlineNotifications" />
                     <span class="switch-slider"></span>
                 </label>
             </div>
@@ -142,7 +145,7 @@
                     <p>@ST("weekly_summary_desc")</p>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" @bind="weeklySummary" />
+                    <input type="checkbox" aria-label="Weekly summary" @bind="weeklySummary" />
                     <span class="switch-slider"></span>
                 </label>
             </div>
@@ -159,11 +162,7 @@
 
             <div class="form-group">
                 <label>@ST("language")</label>
-                <select @bind="language" @bind:after="ApplyLanguage">
-                    <option value="English">English</option>
-                    <option value="Русский">Русский</option>
-                    <option value="Қазақша">Қазақша</option>
-                </select>
+                <select disabled aria-label="Application language"><option value="English">English</option></select>
             </div>
 
             <div class="form-group">
@@ -260,6 +259,7 @@
     [CascadingParameter]
     public MainLayout? Layout { get; set; }
 
+    private Student? studentRecord;
     private string fullName = "Nurbolat Otep";
     private string email = "student@astanait.edu.kz";
     private string studentId = "IT-2508";
@@ -279,12 +279,32 @@
     private bool weeklySummary;
 
     private string message = "";
+    private bool preferencesLoaded;
 
-    protected override void OnInitialized() {
-        if (Layout is not null) {
-            theme = Layout.isDark ? "Dark" : "Light";
-            language = Layout.CurrentLanguage;
-        }
+    protected override async Task OnInitializedAsync() {
+        studentRecord = await StudentService.GetCurrentAsync();
+        if (studentRecord is null) return;
+        fullName = studentRecord.FullName;
+        email = studentRecord.Email;
+        studentId = studentRecord.StudentId;
+        program = studentRecord.Program;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (!firstRender || preferencesLoaded) return;
+        var saved = await Preferences.LoadAsync();
+        theme = saved.Theme; language = "English"; timeZone = saved.TimeZone;
+        semester = saved.Semester; academicYear = saved.AcademicYear; gpaScale = saved.GpaScale;
+        assignmentNotifications = saved.AssignmentNotifications; examNotifications = saved.ExamNotifications;
+        deadlineNotifications = saved.DeadlineNotifications; weeklySummary = saved.WeeklySummary;
+        if (!string.IsNullOrWhiteSpace(saved.FullName)) fullName = saved.FullName;
+        if (!string.IsNullOrWhiteSpace(saved.Email)) email = saved.Email;
+        if (!string.IsNullOrWhiteSpace(saved.StudentId)) studentId = saved.StudentId;
+        if (!string.IsNullOrWhiteSpace(saved.Program)) program = saved.Program;
+
+        Layout?.SetTheme(theme);
+        preferencesLoaded = true;
+        StateHasChanged();
     }
 
     private void ApplyTheme() {
@@ -306,42 +326,55 @@
             : fullName.Trim().Substring(0, 1).ToUpper();
     }
 
-    private void SaveSettings() {
-        if (string.IsNullOrWhiteSpace(fullName) ||
-            string.IsNullOrWhiteSpace(email) ||
-            !email.Contains('@')) {
+    private async Task SaveSettings() {
+        if (string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(studentId) ||
+            !MailAddress.TryCreate(email, out var parsedEmail) || parsedEmail.Address != email.Trim()) {
             message = ST("validation_error");
             return;
         }
+        if (studentRecord is null) { message = "Student profile could not be loaded."; return; }
 
-        ApplyTheme();
-        ApplyLanguage();
-        message = ST("saved");
+        try {
+            studentRecord.FullName = fullName.Trim();
+            studentRecord.Email = email.Trim();
+            studentRecord.StudentId = studentId.Trim();
+            studentRecord.Program = program.Trim();
+            await StudentService.UpdateAsync(studentRecord);
+            ApplyTheme();
+            await Preferences.SaveAsync(new UserPreferences {
+                Theme = theme, Language = "English", TimeZone = timeZone, Semester = semester,
+                AcademicYear = academicYear, GpaScale = gpaScale,
+                AssignmentNotifications = assignmentNotifications, ExamNotifications = examNotifications,
+                DeadlineNotifications = deadlineNotifications, WeeklySummary = weeklySummary,
+                FullName = fullName.Trim(), Email = email.Trim(), StudentId = studentId.Trim(), Program = program.Trim()
+            });
+            message = ST("saved");
+        } catch (Exception ex) { message = $"Could not save settings: {ex.Message}"; }
     }
 
-    private void ResetSettings() {
-        fullName = "Nurbolat Otep";
-        email = "student@astanait.edu.kz";
-        studentId = "IT-2508";
-        program = "Computer Science";
+    private async Task ResetSettings() {
+        var defaults = new UserPreferences();
+        fullName = "Nurbolat Otep"; email = "student@astanait.edu.kz";
+        studentId = "IT-2508"; program = "Computer Science";
+        theme = defaults.Theme; language = "English"; timeZone = defaults.TimeZone;
+        semester = defaults.Semester; academicYear = defaults.AcademicYear; gpaScale = defaults.GpaScale;
+        assignmentNotifications = defaults.AssignmentNotifications;
+        examNotifications = defaults.ExamNotifications;
+        deadlineNotifications = defaults.DeadlineNotifications;
+        weeklySummary = defaults.WeeklySummary;
 
-        theme = "Dark";
-        language = "English";
-        timeZone = "Asia/Almaty";
-
-        semester = "2nd Semester";
-        academicYear = "2026-2027";
-        gpaScale = "4.0";
-
-        assignmentNotifications = true;
-        examNotifications = true;
-        deadlineNotifications = true;
-        weeklySummary = false;
-
-        ApplyTheme();
-        ApplyLanguage();
-
-        message = ST("reset_done");
+        try {
+            if (studentRecord is not null) {
+                studentRecord.FullName = fullName;
+                studentRecord.Email = email;
+                studentRecord.StudentId = studentId;
+                studentRecord.Program = program;
+                await StudentService.UpdateAsync(studentRecord);
+            }
+            ApplyTheme();
+            await Preferences.SaveAsync(defaults);
+            message = ST("reset_done");
+        } catch (Exception ex) { message = $"Could not reset settings: {ex.Message}"; }
     }
 
     private string ST(string key) {

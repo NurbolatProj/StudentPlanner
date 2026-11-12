@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
 <CascadingValue Value="this">
     <div class="app-shell @(isDark ? "dark" : "light")">
@@ -81,7 +81,7 @@
                 <div class="header-actions">
                     <span class="today-label">@T("learning_space")</span>
 
-                    <button class="theme-button"
+                    <button class="theme-button" aria-label="Toggle color theme"
                             @onclick="ToggleTheme"
                             title="@T("switch_theme")">
                         @(isDark ? "☀" : "☾")
@@ -104,6 +104,8 @@
     <span class="dismiss">🗙</span>
 </div>
 
+@inject IUserPreferencesService Preferences
+
 @code {
     public bool isDark { get; private set; } = true;
     public string CurrentLanguage { get; private set; } = "English";
@@ -120,8 +122,18 @@
         StateHasChanged();
     }
 
-    private void ToggleTheme() {
+    private async Task ToggleTheme() {
         isDark = !isDark;
+        var preferences = await Preferences.LoadAsync();
+        preferences.Theme = isDark ? "Dark" : "Light";
+        await Preferences.SaveAsync(preferences);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (!firstRender) return;
+        var preferences = await Preferences.LoadAsync();
+        isDark = preferences.Theme != "Light";
+        StateHasChanged();
     }
 
     private void ToggleMenu() {

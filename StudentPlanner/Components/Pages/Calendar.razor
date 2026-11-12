@@ -1,7 +1,12 @@
-﻿@page "/calendar"
+@page "/calendar"
 @using System.ComponentModel.DataAnnotations
+@using CalendarEvent = StudentPlanner.Models.ScheduleEvent
+@inject IScheduleEventService ScheduleEventService
 
 <PageTitle>Calendar | StudentPlanner</PageTitle>
+@if (!string.IsNullOrWhiteSpace(errorMessage)) {
+    <ErrorBanner Message="@errorMessage" />
+}
 
 <div class="calendar-page">
 
@@ -63,7 +68,7 @@
             <div class="month-navigation">
                 <button class="month-arrow"
                         @onclick="PreviousMonth"
-                        title="Previous month">
+                        title="Previous month" aria-label="Previous month">
                     ‹
                 </button>
 
@@ -71,7 +76,7 @@
 
                 <button class="month-arrow"
                         @onclick="NextMonth"
-                        title="Next month">
+                        title="Next month" aria-label="Next month">
                     ›
                 </button>
             </div>
@@ -108,7 +113,7 @@
 
                 <button type="button"
                         @key="day"
-                        class="calendar-day
+                        aria-label="@day.ToString("dddd, MMMM d")" class="calendar-day
                     @(day.Month != DisplayedMonth.Month ? "other-month" : "")
                     @(day.Date == DateTime.Today ? "today-cell" : "")
                     @(day.Date == selectedDate.Date ? "selected-day" : "")"
@@ -193,17 +198,13 @@
 
                         <div class="event-actions">
 
-                            <button class="event-action edit-event"
+                            <button class="event-action edit-event" aria-label="Edit event"
                                     title="Edit event"
                                     @onclick="() => EditEvent(item)">
                                 ✎
                             </button>
 
-                            <button class="event-action delete-event"
-                                    title="Delete event"
-                                    @onclick="() => DeleteEvent(item.Id)">
-                                🗑
-                            </button>
+                            <ConfirmActionButton CssClass="event-action delete-event" AriaLabel="Delete event" ConfirmationMessage="Delete this calendar event?" OnConfirmed="() => DeleteEvent(item.Id)">🗑</ConfirmActionButton>
 
                         </div>
 
@@ -221,7 +222,7 @@
 @if (showModal) {
     <div class="calendar-modal-overlay" @onclick="CloseModal">
 
-        <div class="calendar-modal" @onclick:stopPropagation="true">
+        <div class="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-dialog-title" tabindex="-1" @onkeydown="HandleModalKeyDown" @onclick:stopPropagation="true">
 
             <div class="modal-header">
 
@@ -235,7 +236,7 @@
                     <p>Enter the details of your academic event.</p>
                 </div>
 
-                <button class="calendar-modal-close"
+                <button class="calendar-modal-close" aria-label="Close calendar event form"
                         @onclick="CloseModal">
                     ×
                 </button>
@@ -331,110 +332,13 @@
 
 @code {
 
-    // EVENT MODEL
+    private List<CalendarEvent> events = [];
+    private string errorMessage = "";
 
-    public class CalendarEvent {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Event title is required.")]
-        [StringLength(100, MinimumLength = 3,
-            ErrorMessage = "Title must contain 3-100 characters.")]
-        public string Title { get; set; } = "";
-
-        [Required(ErrorMessage = "Course or subject is required.")]
-        public string Course { get; set; } = "";
-
-        public DateTime Date { get; set; } = DateTime.Today;
-
-        public string Time { get; set; } = "09:00";
-
-        public string Type { get; set; } = "Class";
-
-        [StringLength(500)]
-        public string Description { get; set; } = "";
+    protected override async Task OnInitializedAsync() {
+        try { events = await ScheduleEventService.GetAllAsync(); }
+        catch (Exception ex) { errorMessage = $"Could not load calendar events: {ex.Message}"; }
     }
-
-    // MOCK DATA
-
-    private List<CalendarEvent> events = new()
-    {
-        new()
-        {
-            Id = 1,
-            Title = "Database Lecture",
-            Course = "DBMS",
-            Date = DateTime.Today,
-            Time = "09:00",
-            Type = "Class",
-            Description = "Database normalization and SQL."
-        },
-
-        new()
-        {
-            Id = 2,
-            Title = "OOP Workshop",
-            Course = "Programming",
-            Date = DateTime.Today.AddDays(1),
-            Time = "11:00",
-            Type = "Class",
-            Description = "Object-oriented programming practice."
-        },
-
-        new()
-        {
-            Id = 3,
-            Title = "Database Exam",
-            Course = "DBMS",
-            Date = DateTime.Today.AddDays(3),
-            Time = "10:00",
-            Type = "Exam",
-            Description = "Midterm examination."
-        },
-
-        new()
-        {
-            Id = 4,
-            Title = "English Presentation",
-            Course = "English",
-            Date = DateTime.Today.AddDays(5),
-            Time = "14:00",
-            Type = "Assignment",
-            Description = "Final English presentation."
-        },
-
-        new()
-        {
-            Id = 5,
-            Title = "Algorithms Lecture",
-            Course = "ADS",
-            Date = DateTime.Today.AddDays(7),
-            Time = "13:00",
-            Type = "Class",
-            Description = "Algorithms and data structures."
-        },
-
-        new()
-        {
-            Id = 6,
-            Title = "Project Deadline",
-            Course = "Web Development",
-            Date = DateTime.Today.AddDays(10),
-            Time = "23:59",
-            Type = "Assignment",
-            Description = "Submit the Student Planner project."
-        },
-
-        new()
-        {
-            Id = 7,
-            Title = "Study Session",
-            Course = "Personal",
-            Date = DateTime.Today.AddDays(2),
-            Time = "17:00",
-            Type = "Personal",
-            Description = "Independent study time."
-        }
-    };
 
     // STATE
 
@@ -548,48 +452,29 @@
 
     // SAVE EVENT
 
-    private void SaveEvent() {
-        if (isEditing) {
-            var existing = events.FirstOrDefault(
-                e => e.Id == editingId
-            );
-
-            if (existing != null) {
-                existing.Title = formModel.Title;
-                existing.Course = formModel.Course;
-                existing.Date = formModel.Date;
-                existing.Time = formModel.Time;
-                existing.Type = formModel.Type;
-                existing.Description = formModel.Description;
-            }
-        } else {
-            formModel.Id = events.Count == 0
-                ? 1
-                : events.Max(e => e.Id) + 1;
-
-            events.Add(formModel);
-        }
-
-        selectedDate = formModel.Date.Date;
-
-        DisplayedMonth = new DateTime(
-            selectedDate.Year,
-            selectedDate.Month,
-            1
-        );
-
-        CloseModal();
+    private async Task SaveEvent() {
+        try {
+            if (isEditing) await ScheduleEventService.UpdateAsync(formModel);
+            else await ScheduleEventService.CreateAsync(formModel);
+            events = await ScheduleEventService.GetAllAsync();
+            selectedDate = formModel.Date.Date;
+            DisplayedMonth = new DateTime(selectedDate.Year, selectedDate.Month, 1);
+            errorMessage = "";
+            CloseModal();
+        } catch (Exception ex) { errorMessage = $"Could not save calendar event: {ex.Message}"; }
     }
 
     // DELETE EVENT
 
-    private void DeleteEvent(int id) {
-        var item = events.FirstOrDefault(e => e.Id == id);
-
-        if (item != null) {
-            events.Remove(item);
-        }
+    private async Task DeleteEvent(int id) {
+        try {
+            await ScheduleEventService.DeleteAsync(id);
+            events = await ScheduleEventService.GetAllAsync();
+            errorMessage = "";
+        } catch (Exception ex) { errorMessage = $"Could not delete calendar event: {ex.Message}"; }
     }
+
+    private void HandleModalKeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") CloseModal(); }
 
     // CLOSE MODAL
 

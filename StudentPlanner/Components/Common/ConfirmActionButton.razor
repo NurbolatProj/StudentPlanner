@@ -1,0 +1,22 @@
+@inject Microsoft.JSInterop.IJSRuntime JS
+
+<button type="button"
+        class="@CssClass"
+        title="@AriaLabel"
+        aria-label="@AriaLabel"
+        @onclick="ConfirmAsync">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter, EditorRequired] public string CssClass { get; set; } = "";
+    [Parameter, EditorRequired] public string AriaLabel { get; set; } = "Delete";
+    [Parameter, EditorRequired] public string ConfirmationMessage { get; set; } = "Are you sure?";
+    [Parameter, EditorRequired] public EventCallback OnConfirmed { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task ConfirmAsync() {
+        if (await JS.InvokeAsync<bool>("confirm", ConfirmationMessage))
+            await OnConfirmed.InvokeAsync();
+    }
+}

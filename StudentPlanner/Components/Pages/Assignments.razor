@@ -1,7 +1,12 @@
-﻿@page "/assignments"
+@page "/assignments"
 @using System.ComponentModel.DataAnnotations
+@using AssignmentModel = StudentPlanner.Models.Assignment
+@inject IAssignmentService AssignmentService
 
 <PageTitle>Assignments | StudentPlanner</PageTitle>
+@if (!string.IsNullOrWhiteSpace(errorMessage)) {
+    <ErrorBanner Message="@errorMessage" />
+}
 
 <div class="assignments-page">
 
@@ -75,26 +80,27 @@
             <div class="search-box">
                 <span>⌕</span>
                 <input type="text"
-                       placeholder="Search assignments..."
+                       placeholder="Search assignments..." aria-label="Search assignments"
                        @bind="searchTerm"
                        @bind:event="oninput" />
             </div>
 
-            <select class="filter-select" @bind="statusFilter">
+            <select class="filter-select" aria-label="Filter by status" @bind="statusFilter">
                 <option value="All">All Statuses</option>
                 <option value="Pending">Pending</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
             </select>
 
-            <select class="filter-select" @bind="priorityFilter">
+            <select class="filter-select" aria-label="Filter by priority" @bind="priorityFilter">
                 <option value="All">All Priorities</option>
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
             </select>
 
-            <button class="reset-button" @onclick="ResetFilters">
+            <select class="filter-select" aria-label="Sort assignments" @bind="sortBy"><option value="due">Sort: due date</option><option value="title">Sort: title</option></select>
+<button class="reset-button" @onclick="ResetFilters">
                 Reset
             </button>
 
@@ -152,7 +158,8 @@
 
                             <td>
                                 <select class="status-select @StatusClass(assignment.Status)"
-                                        @bind="assignment.Status">
+                                        @bind="assignment.Status"
+                                        @bind:after="() => UpdateAssignmentStatus(assignment)">
 
                                     <option value="Pending">Pending</option>
                                     <option value="In Progress">In Progress</option>
@@ -164,17 +171,13 @@
                             <td>
                                 <div class="action-buttons">
 
-                                    <button class="action-button edit-action"
+                                    <button aria-label="Edit assignment" class="action-button edit-action"
                                             title="Edit assignment"
                                             @onclick="() => EditAssignment(assignment)">
                                         ✎
                                     </button>
 
-                                    <button class="action-button delete-action"
-                                            title="Delete assignment"
-                                            @onclick="() => DeleteAssignment(assignment.Id)">
-                                        🗑
-                                    </button>
+                                    <ConfirmActionButton CssClass="action-button delete-action" AriaLabel="Delete assignment" ConfirmationMessage="Delete this assignment?" OnConfirmed="() => DeleteAssignment(assignment.Id)">🗑</ConfirmActionButton>
 
                                 </div>
                             </td>
@@ -212,7 +215,7 @@
 @if (showModal) {
     <div class="modal-overlay" @onclick="CloseModal">
 
-        <div class="assignment-modal" @onclick:stopPropagation="true">
+        <div class="assignment-modal" role="dialog" aria-modal="true" aria-labelledby="assignment-dialog-title" tabindex="-1" @onkeydown="HandleModalKeyDown" @onclick:stopPropagation="true">
 
             <div class="modal-heading">
 
@@ -226,7 +229,7 @@
                     <p>Enter the assignment details below.</p>
                 </div>
 
-                <button class="modal-close" @onclick="CloseModal">
+                <button class="modal-close" aria-label="Close assignment form" @onclick="CloseModal">
                     ×
                 </button>
 
@@ -324,93 +327,18 @@
 
 @code {
 
-    // MODEL
+    private List<AssignmentModel> assignments = [];
+    private string errorMessage = "";
 
-    public class AssignmentModel {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Assignment title is required.")]
-        [StringLength(100, MinimumLength = 3,
-            ErrorMessage = "Title must contain 3-100 characters.")]
-        public string Title { get; set; } = "";
-
-        [StringLength(500,
-            ErrorMessage = "Description cannot exceed 500 characters.")]
-        public string Description { get; set; } = "";
-
-        [Required(ErrorMessage = "Course is required.")]
-        public string Course { get; set; } = "";
-
-        public DateTime DueDate { get; set; } = DateTime.Today.AddDays(7);
-
-        public string Priority { get; set; } = "Medium";
-
-        public string Status { get; set; } = "Pending";
+    protected override async Task OnInitializedAsync() {
+        try { assignments = await AssignmentService.GetAllAsync(); }
+        catch (Exception ex) { errorMessage = $"Could not load assignments: {ex.Message}"; }
     }
-
-    // MOCK DATA
-
-    private List<AssignmentModel> assignments = new()
-    {
-        new()
-        {
-            Id = 1,
-            Title = "Database Normalization",
-            Description = "Complete 1NF, 2NF and 3NF exercises.",
-            Course = "DBMS",
-            DueDate = DateTime.Today.AddDays(2),
-            Priority = "High",
-            Status = "Pending"
-        },
-
-        new()
-        {
-            Id = 2,
-            Title = "OOP Project Implementation",
-            Description = "Implement Java OOP project functionality.",
-            Course = "Programming",
-            DueDate = DateTime.Today.AddDays(4),
-            Priority = "Medium",
-            Status = "In Progress"
-        },
-
-        new()
-        {
-            Id = 3,
-            Title = "English Presentation",
-            Description = "Prepare the final English presentation.",
-            Course = "English",
-            DueDate = DateTime.Today.AddDays(6),
-            Priority = "Low",
-            Status = "Completed"
-        },
-
-        new()
-        {
-            Id = 4,
-            Title = "Algorithms Assignment",
-            Description = "Solve algorithmic programming problems.",
-            Course = "ADS",
-            DueDate = DateTime.Today.AddDays(8),
-            Priority = "High",
-            Status = "Pending"
-        },
-
-        new()
-        {
-            Id = 5,
-            Title = "Web Development Project",
-            Description = "Develop the Student Planner frontend.",
-            Course = "Web Development",
-            DueDate = DateTime.Today.AddDays(10),
-            Priority = "High",
-            Status = "In Progress"
-        }
-    };
 
     // STATE
 
     private string searchTerm = "";
+    private string sortBy = "due";
     private string statusFilter = "All";
     private string priorityFilter = "All";
 
@@ -432,7 +360,7 @@
             (statusFilter == "All" || a.Status == statusFilter)
             &&
             (priorityFilter == "All" || a.Priority == priorityFilter)
-        );
+        ).OrderBy(a => sortBy == "title" ? a.Title : a.DueDate.ToString("yyyy-MM-dd"));
 
     // STATISTICS
 
@@ -474,41 +402,32 @@
 
     // SAVE
 
-    private void SaveAssignment() {
-        if (isEditing) {
-            var existing = assignments.FirstOrDefault(
-                a => a.Id == editingId
-            );
-
-            if (existing != null) {
-                existing.Title = formModel.Title;
-                existing.Description = formModel.Description;
-                existing.Course = formModel.Course;
-                existing.DueDate = formModel.DueDate;
-                existing.Priority = formModel.Priority;
-                existing.Status = formModel.Status;
-            }
-        } else {
-            formModel.Id = assignments.Count == 0
-                ? 1
-                : assignments.Max(a => a.Id) + 1;
-
-            assignments.Add(formModel);
-        }
-
-        CloseModal();
+    private async Task SaveAssignment() {
+        try {
+            if (isEditing) await AssignmentService.UpdateAsync(formModel);
+            else await AssignmentService.CreateAsync(formModel);
+            assignments = await AssignmentService.GetAllAsync();
+            errorMessage = "";
+            CloseModal();
+        } catch (Exception ex) { errorMessage = $"Could not save assignment: {ex.Message}"; }
     }
 
     // DELETE
 
-    private void DeleteAssignment(int id) {
-        var assignment = assignments.FirstOrDefault(
-            a => a.Id == id
-        );
+    private async Task DeleteAssignment(int id) {
+        try {
+            await AssignmentService.DeleteAsync(id);
+            assignments = await AssignmentService.GetAllAsync();
+            errorMessage = "";
+        } catch (Exception ex) { errorMessage = $"Could not delete assignment: {ex.Message}"; }
+    }
 
-        if (assignment != null) {
-            assignments.Remove(assignment);
-        }
+    private async Task UpdateAssignmentStatus(AssignmentModel assignment) {
+        try {
+            await AssignmentService.UpdateAsync(assignment);
+            assignments = await AssignmentService.GetAllAsync();
+            errorMessage = "";
+        } catch (Exception ex) { errorMessage = $"Could not update assignment: {ex.Message}"; }
     }
 
     // RESET FILTERS
@@ -518,6 +437,8 @@
         statusFilter = "All";
         priorityFilter = "All";
     }
+
+    private void HandleModalKeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") CloseModal(); }
 
     // CLOSE MODAL
 

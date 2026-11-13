@@ -11,7 +11,7 @@ Definitions and validation attributes are in `StudentPlanner/Models/PlannerModel
 - `ScheduleEvent`: integer `Id`, nullable `CourseId`, `Title`, `Description`, `StartTime`, `EndTime`, `Location`, and `ScheduleEventType`.
 - `StudentSettings`: profile, `ThemePreference`, English-only `AppLanguage`, time zone, semester, academic year, `GpaScale`, and notification preferences.
 
-Dates and times currently use `DateTime` local wall-clock values. Agree on UTC storage and user time-zone conversion before introducing a persistent backend. IDs are positive integers; UI mock IDs are generated per scoped service and are not durable across app restarts.
+Dates and times continue to use the shared `DateTime` local wall-clock contract and are stored as SQLite date/time values. Agree on UTC storage and user time-zone conversion before changing this contract. IDs are database-generated positive integers and are durable across restarts.
 
 ## Interfaces to implement
 
@@ -24,18 +24,20 @@ Implement the signatures in `StudentPlanner/Services/Interfaces/IPlannerServices
 - `ISettingsService`: `GetSettingsAsync`, `SaveSettingsAsync`.
 - `IDashboardService`: `GetSnapshotAsync`.
 
+EF-backed implementation classes live in `StudentPlanner/Services/Database`. Additional `IAssignmentQueryService` and `IScheduleQueryService` contracts provide database-side filtering/range queries without changing the existing component-facing interfaces. `IAssignmentPriorityService` returns deterministic Dashboard recommendations.
+
 Every asynchronous operation accepts an optional `CancellationToken`. List results are read-only snapshots. Missing update/delete targets return `null`/`false`. Invalid data should be reported through a documented validation exception or validation result; persistence failures should propagate as service exceptions and be handled by the UI.
 
-`IChangeNotifier.Changed` is the current mock synchronization mechanism. EF-backed services must publish a notification after successful writes, or Student 1 should replace it with an equivalent circuit-scoped state publisher.
+`IChangeNotifier.Changed` remains the synchronization mechanism. Scoped EF-backed services publish a notification after successful writes. Services use `IDbContextFactory<AppDbContext>` and create a short-lived context per operation.
 
 ## Relationships and deletion
 
-Assignments and grades reference `CourseId`; schedule events may have no course. The UI currently prevents deleting courses referenced by an assignment or grade. Keep that restrict-delete policy in the database/service layer. Do not cascade-delete academic records silently.
+Assignments and grades reference `CourseId`; schedule events may have no course. Assignment and grade relationships use `RESTRICT`; the service rejects deleting courses referenced by those records. Schedule event relationships use `SET NULL`, preserving an event if its course is removed. No academic records are cascade-deleted.
 
 ## GPA demonstration rule
 
-`GpaCalculator` first computes a weighted percentage within each course (`sum(percentage × Weight) / sum(Weight)`), converts that percentage linearly to the selected scale, then weights course GPA by course credits. The percentage conversion is a transparent demonstration rule, not an institutional grading policy. Confirm the university's grading bands before replacing it with a production rule. `MaxScore` normalizes each grade to a percentage; zero or invalid maximum scores are rejected by validation.
+`GpaCalculator` first computes a weighted percentage within each course (`sum(percentage × Weight) / sum(Weight)`), converts that percentage linearly to the selected scale, then weights course GPA by course credits from the Course relationship. The percentage conversion is a transparent demonstration rule, not an institutional grading policy. Confirm the university's grading bands before replacing it with a production rule. `MaxScore` normalizes each grade to a percentage; zero or invalid maximum scores are rejected by validation. Course display labels and derived grade credits are frontend conveniences and are not persisted.
 
 ## Service replacement
 
-The mock implementations are registered in `Program.cs`. Student 1 may add EF Core implementations and swap DI registrations while preserving interfaces and model semantics. Do not make Razor pages depend on `DbContext` or entities directly. Backend validation remains authoritative even when frontend forms validate the same fields.
+`Program.cs` registers EF Core SQLite implementations and applies migrations at startup by default. Configure `Database:Path` to override the default `%LOCALAPPDATA%/StudentPlanner/studentplanner.db` path. Development sample data is inserted only into an entirely empty database. Browser preferences remain in local storage; no second settings store is introduced. Do not make Razor pages depend on `DbContext`. Backend validation remains authoritative even when frontend forms validate the same fields.

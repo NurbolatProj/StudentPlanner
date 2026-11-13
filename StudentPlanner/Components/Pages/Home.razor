@@ -94,6 +94,21 @@
                 <a href="/assignments" class="view-link">View all →</a>
             </div>
 
+            @if (priorityRecommendations.Count > 0) {
+                <div class="priority-recommendations" aria-label="Recommended assignments">
+                    <h3>Recommended next</h3>
+                    @foreach (var recommendation in priorityRecommendations) {
+                        <div class="priority-recommendation">
+                            <span class="recommendation-score">@recommendation.PriorityScore.ToString("0")</span>
+                            <div>
+                                <strong>@recommendation.Title</strong>
+                                <small>@recommendation.Reason</small>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
             <div class="task-list">
 
                 @foreach (var task in assignments) {
@@ -288,8 +303,10 @@
     [Inject] private IScheduleService ScheduleService { get; set; } = default!;
     [Inject] private ISettingsService SettingsService { get; set; } = default!;
     [Inject] private IDashboardService DashboardService { get; set; } = default!;
+    [Inject] private IAssignmentPriorityService PriorityService { get; set; } = default!;
     [Inject] private ILogger<Home> Logger { get; set; } = default!;
     private List<Assignment> assignments=new(); private List<Course> courses=new(); private List<Grade> grades=new(); private List<ScheduleEvent> todayEvents=new();
+    private IReadOnlyList<PrioritizedAssignmentDto> priorityRecommendations = Array.Empty<PrioritizedAssignmentDto>();
     private IEnumerable<Assignment> RecentlyCompleted=>assignments.Where(a=>a.CompletedAt.HasValue).OrderByDescending(a=>a.CompletedAt).Take(5);
     private List<DeadlineItem> deadlines=>assignments.Where(a=>a.Status!=AssignmentStatus.Completed).OrderBy(a=>a.DueDate).Take(3).Select(a=>new DeadlineItem{Day=a.DueDate.ToString("dd"),Month=a.DueDate.ToString("MMM").ToUpperInvariant(),Title=a.Title,Course=a.CourseName,Priority=a.Priority.ToString()}).ToList();
     private List<ActivityItem> weeklyActivity=>Enumerable.Range(0,7).Select(offset=>{var day=DateTime.Today.AddDays(-6+offset);var hours=assignments.Where(a=>a.CompletedAt?.Date==day.Date).Sum(a=>a.EstimatedMinutes)/60d;return new ActivityItem{Day=day.ToString("ddd").ToUpperInvariant(),Hours=hours};}).ToList();
@@ -306,7 +323,7 @@
     private sealed class DeadlineItem{public string Day{get;set;}="";public string Month{get;set;}="";public string Title{get;set;}="";public string Course{get;set;}="";public string Priority{get;set;}="";}
     private sealed class ActivityItem{public string Day{get;set;}="";public double Hours{get;set;}}
     protected override async Task OnInitializedAsync(){CourseService.Changed+=OnChanged;AssignmentService.Changed+=OnChanged;GradeService.Changed+=OnChanged;ScheduleService.Changed+=OnChanged;SettingsService.Changed+=OnChanged;await LoadAsync();}
-    private async Task LoadAsync(){try{courses=(await CourseService.GetCoursesAsync()).ToList();assignments=(await AssignmentService.GetAssignmentsAsync()).ToList();grades=(await GradeService.GetGradesAsync()).ToList();currentSettings=await SettingsService.GetSettingsAsync();var snap=await DashboardService.GetSnapshotAsync();todayEvents=snap.TodayEvents.ToList();loadError="";}catch(Exception ex){Logger.LogError(ex,"Dashboard data could not be loaded.");loadError="Dashboard data could not be refreshed. Please try again.";}}
+    private async Task LoadAsync(){try{courses=(await CourseService.GetCoursesAsync()).ToList();assignments=(await AssignmentService.GetAssignmentsAsync()).ToList();grades=(await GradeService.GetGradesAsync()).ToList();currentSettings=await SettingsService.GetSettingsAsync();var snap=await DashboardService.GetSnapshotAsync();todayEvents=snap.TodayEvents.ToList();priorityRecommendations=PriorityService.Prioritize(assignments,DateOnly.FromDateTime(DateTime.Today),3);loadError="";}catch(Exception ex){Logger.LogError(ex,"Dashboard data could not be loaded.");loadError="Dashboard data could not be refreshed. Please try again.";}}
     private void OnChanged()=>_ = InvokeAsync(async()=>{await LoadAsync();StateHasChanged();});
     private string CourseIcon(string color)=>color switch{"blue"=>"📘","green"=>"📊","orange"=>"📝","pink"=>"🌐",_=>"🗄️"};
     private string GetCourseGrade(int courseId){var items=grades.Where(g=>g.CourseId==courseId).ToList();if(items.Count==0)return "—";var pct=items.Sum(g=>g.Percentage*g.Weight)/Math.Max(1,items.Sum(g=>g.Weight));return pct>=90?"A":pct>=80?"B":pct>=70?"C":pct>=60?"D":"F";}

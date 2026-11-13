@@ -1,23 +1,42 @@
 using StudentPlanner.Components;
 using StudentPlanner.Services.Interfaces;
-using StudentPlanner.Services.Mock;
 using StudentPlanner.Services;
+using StudentPlanner.Data;
+using StudentPlanner.Services.Business;
+using StudentPlanner.Services.Database;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddScoped<ICourseService, MockCourseService>();
-builder.Services.AddScoped<IAssignmentService, MockAssignmentService>();
-builder.Services.AddScoped<IGradeService, MockGradeService>();
-builder.Services.AddScoped<IScheduleService, MockScheduleService>();
+var sqliteConnectionString = DatabasePath.CreateConnectionString(builder.Configuration["Database:Path"]);
+builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(sqliteConnectionString));
+builder.Services.AddScoped<DbInitializer>();
+builder.Services.AddScoped<ICourseService, EfCourseService>();
+builder.Services.AddScoped<EfAssignmentService>();
+builder.Services.AddScoped<IAssignmentService>(services => services.GetRequiredService<EfAssignmentService>());
+builder.Services.AddScoped<IAssignmentQueryService>(services => services.GetRequiredService<EfAssignmentService>());
+builder.Services.AddScoped<IGradeService, EfGradeService>();
+builder.Services.AddScoped<EfScheduleService>();
+builder.Services.AddScoped<IScheduleService>(services => services.GetRequiredService<EfScheduleService>());
+builder.Services.AddScoped<IScheduleQueryService>(services => services.GetRequiredService<EfScheduleService>());
 builder.Services.AddScoped<BrowserSettingsService>();
 builder.Services.AddScoped<ISettingsService>(sp => sp.GetRequiredService<BrowserSettingsService>());
 builder.Services.AddScoped<ISettingsInitializer>(sp => sp.GetRequiredService<BrowserSettingsService>());
-builder.Services.AddScoped<IDashboardService, MockDashboardService>();
+builder.Services.AddScoped<IDashboardService, EfDashboardService>();
+var priorityWeights = builder.Configuration.GetSection("AssignmentPriority").Get<AssignmentPriorityWeights>()
+    ?? new AssignmentPriorityWeights();
+builder.Services.AddSingleton<IAssignmentPriorityService>(new AssignmentPriorityService(priorityWeights));
 
 var app = builder.Build();
+
+if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<DbInitializer>().InitializeAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment()) {

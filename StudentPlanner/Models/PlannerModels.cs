@@ -15,6 +15,7 @@ public sealed class Student
     public int Id { get; set; } = 1;
     [Required, StringLength(100, MinimumLength = 2)] public string FullName { get; set; } = "Nurbolat Otep";
     [Required, EmailAddress, StringLength(254)] public string Email { get; set; } = "student@astanait.edu.kz";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class Course
@@ -29,6 +30,9 @@ public sealed class Course
     [StringLength(500)] public string Description { get; set; } = "";
     [StringLength(40)] public string Room { get; set; } = "";
     [StringLength(100)] public string Schedule { get; set; } = "";
+    public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();
+    public ICollection<Grade> Grades { get; set; } = new List<Grade>();
+    public ICollection<ScheduleEvent> ScheduleEvents { get; set; } = new List<ScheduleEvent>();
 }
 
 public sealed class Assignment
@@ -45,6 +49,7 @@ public sealed class Assignment
     // Display-only course label. CourseId is the persisted relationship.
     [NotMapped]
     public string CourseName { get; set; } = "";
+    public Course? Course { get; set; }
     [NotMapped]
     public bool IsCompleted { get => Status == AssignmentStatus.Completed; set { Status=value?AssignmentStatus.Completed:AssignmentStatus.Pending; CompletedAt=value?(CompletedAt??DateTime.Now):null; } }
 }
@@ -59,7 +64,8 @@ public sealed class Grade : IValidatableObject
     [Range(typeof(decimal), "0", "100")] public decimal Weight { get; set; } = 100;
     public DateTime Date { get; set; } = DateTime.Today;
     [NotMapped] public string CourseName { get; set; } = "";
-    public int Credits { get; set; } = 3;
+    public Course? Course { get; set; }
+    [NotMapped] public int Credits { get; set; } = 3;
     [NotMapped]
     public decimal Percentage => MaxScore <= 0 ? 0 : Math.Clamp(Score / MaxScore * 100m, 0m, 100m);
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -79,6 +85,7 @@ public sealed class ScheduleEvent : IValidatableObject
     [StringLength(100)] public string Location { get; set; } = "";
     public ScheduleEventType Type { get; set; } = ScheduleEventType.Class;
     [NotMapped] public string CourseName { get; set; } = "";
+    public Course? Course { get; set; }
     [NotMapped] public DateTime Date { get => StartTime.Date; set { StartTime = value.Date.Add(StartTime.TimeOfDay); EndTime = value.Date.Add(EndTime.TimeOfDay); } }
     [NotMapped] public string Time { get => StartTime.ToString("HH:mm"); set { if (TimeSpan.TryParse(value, out var time)) StartTime = StartTime.Date.Add(time); } }
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

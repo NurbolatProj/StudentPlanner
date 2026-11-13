@@ -581,6 +581,63 @@
     gap: 4px;
 }
 
+.priority-recommendations {
+    display: grid;
+    gap: 9px;
+    margin: 4px 0 16px;
+    padding: 13px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--background);
+}
+
+.priority-recommendations h3 {
+    margin: 0 0 2px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.priority-recommendation {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.recommendation-score {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 8px;
+    background: #302d55;
+    color: #aaa5ff;
+    font-size: 11px;
+    font-weight: 750;
+}
+
+.priority-recommendation > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.priority-recommendation strong {
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.priority-recommendation small {
+    color: var(--muted);
+    font-size: 9px;
+}
+
     .course-grade strong {
         color: #35ae81;
         font-size: 14px;

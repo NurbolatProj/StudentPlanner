@@ -1,9 +1,13 @@
-﻿@page "/grades"
+@page "/grades"
+@implements IDisposable
 @using System.ComponentModel.DataAnnotations
+@inject ILogger<Grades> Logger
 
 <PageTitle>Grades & Analytics | StudentPlanner</PageTitle>
 
 <div class="grades-page">
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="settings-message" role="alert">@errorMessage</p> }
 
     <!-- HEADER -->
 
@@ -27,7 +31,7 @@
             <div class="grade-stat-icon purple">★</div>
             <div>
                 <span>Current GPA</span>
-                <strong>@CurrentGPA.ToString("0.00") <small>/ 4.00</small></strong>
+                <strong>@CurrentGPA.ToString("0.00") <small>/ @((int)gpaScale).ToString("0.00")</small></strong>
             </div>
         </div>
 
@@ -77,7 +81,7 @@
 
                     <div class="gpa-circle-inner">
                         <strong>@CurrentGPA.ToString("0.00")</strong>
-                        <span>OUT OF 4.00</span>
+                <span>OUT OF @((int)gpaScale).ToString("0.00")</span>
                     </div>
 
                 </div>
@@ -93,7 +97,7 @@
 
                 <div>
                     <span>Academic Target</span>
-                    <strong>4.00 GPA</strong>
+            <strong>@((int)gpaScale).ToString("0.00") GPA</strong>
                 </div>
 
                 <div>
@@ -166,7 +170,7 @@
         @if (grades.Any()) {
             <div class="performance-chart">
 
-                @foreach (var grade in grades.OrderBy(g => g.Course)) {
+                @foreach (var grade in grades.OrderBy(g => g.CourseName)) {
                     <div class="chart-column">
 
                         <span class="chart-value">
@@ -179,8 +183,8 @@
                             </div>
                         </div>
 
-                        <span class="chart-label" title="@grade.Course">
-                            @grade.Course
+                        <span class="chart-label" title="@grade.CourseName">
+                            @grade.CourseName
                         </span>
 
                     </div>
@@ -226,6 +230,7 @@
                 <span>⌕</span>
 
                 <input type="text"
+                       aria-label="Search grades by course or assessment"
                        placeholder="Search by course or assessment..."
                        @bind="searchTerm"
                        @bind:event="oninput" />
@@ -238,6 +243,12 @@
                 <option value="C">C / C+ / C-</option>
                 <option value="D">D</option>
                 <option value="F">F</option>
+            </select>
+
+            <select class="grades-filter" @bind="sortBy" aria-label="Sort grades">
+                <option value="Course">Sort by course</option>
+                <option value="Date">Sort by date</option>
+                <option value="Score">Sort by score</option>
             </select>
 
             <button class="grades-reset-button" @onclick="ResetFilters">
@@ -277,12 +288,12 @@
                             <tr @key="grade.Id">
 
                                 <td>
-                                    <strong>@grade.Course</strong>
+                                    <strong>@grade.CourseName</strong>
                                 </td>
 
                                 <td>
                                     <span class="assessment-name">
-                                        @grade.Assessment
+                                        @grade.Title
                                     </span>
                                 </td>
 
@@ -298,13 +309,13 @@
                                 </td>
 
                                 <td>
-                                    <span class="grade-letter @GradeClass(grade.Score)">
+                                    <span class="grade-letter @GradeClass(grade.Percentage)">
                                         @GetLetter(grade.Score)
                                     </span>
                                 </td>
 
                                 <td>
-                                    <strong>@GetGradePoint(grade.Score).ToString("0.00")</strong>
+                    <strong>@GetGradePoint(grade.Percentage).ToString("0.00")</strong>
                                 </td>
 
                                 <td>@grade.Credits</td>
@@ -320,7 +331,7 @@
                                         </button>
 
                                         <button title="Delete grade"
-                                                @onclick="() => DeleteGrade(grade.Id)">
+                                                @onclick="() => RequestDeleteGrade(grade.Id)">
                                             🗑
                                         </button>
 
@@ -345,11 +356,13 @@
 
 </div>
 
+@if (pendingDeleteId is not null) { <ConfirmDialog Title="Delete this grade?" Message="This action cannot be undone." ConfirmText="Delete grade" OnConfirm="ConfirmDeleteGrade" OnCancel="CancelDeleteGrade" /> }
+
 <!-- ADD / EDIT MODAL -->
 @if (showModal) {
-    <div class="grades-modal-overlay" @onclick="CloseModal">
+    <div class="grades-modal-overlay" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
 
-        <div class="grades-modal" @onclick:stopPropagation="true">
+        <div class="grades-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" tabindex="-1">
 
             <div class="grades-modal-header">
 
@@ -359,34 +372,36 @@
                     <p>Enter your academic assessment results.</p>
                 </div>
 
-                <button class="grades-close-button" @onclick="CloseModal">
+                <button class="grades-close-button" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                     ×
                 </button>
 
             </div>
 
-            <EditForm Model="formModel" OnValidSubmit="SaveGrade">
+            <EditForm Model="formModel" OnValidSubmit="SaveGrade" class="planner-form">
 
                 <DataAnnotationsValidator />
+                @if (!string.IsNullOrWhiteSpace(errorMessage)) { <div class="grades-form-error" role="alert">@errorMessage</div> }
 
                 <div class="grades-form-group">
                     <label>Course Name *</label>
 
-                    <InputText class="grades-input"
-                               @bind-Value="formModel.Course"
-                               placeholder="e.g. Database Management" />
+                    <InputSelect class="grades-input" @bind-Value="formModel.CourseId">
+                        <option value="0">Select a course</option>
+                        @foreach (var course in courses) { <option value="@course.Id">@course.Code — @course.Name</option> }
+                    </InputSelect>
 
-                    <ValidationMessage For="@(() => formModel.Course)" />
+                        <ValidationMessage For="@(() => formModel.CourseId)" />
                 </div>
 
                 <div class="grades-form-group">
                     <label>Assessment *</label>
 
                     <InputText class="grades-input"
-                               @bind-Value="formModel.Assessment"
+                               @bind-Value="formModel.Title"
                                placeholder="e.g. Midterm Exam" />
 
-                    <ValidationMessage For="@(() => formModel.Assessment)" />
+                    <ValidationMessage For="@(() => formModel.Title)" />
                 </div>
 
                 <div class="grades-form-row">
@@ -422,12 +437,12 @@
                 <div class="grades-preview">
                     <span>Calculated Grade</span>
 
-                    <strong class="@GradeClass(formModel.Score)">
-                        @GetLetter(formModel.Score)
+                    <strong class="@GradeClass(formModel.Percentage)">
+                        @GetLetter(formModel.Percentage)
                     </strong>
 
                     <span>
-                        @GetGradePoint(formModel.Score).ToString("0.00") GPA
+                        @GetGradePoint(formModel.Percentage).ToString("0.00") GPA
                     </span>
                 </div>
 
@@ -435,12 +450,12 @@
 
                     <button type="button"
                             class="grades-cancel-button"
-                            @onclick="CloseModal">
+                            @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                         Cancel
                     </button>
 
-                    <button type="submit" class="grades-primary-button">
-                        @(isEditing ? "Save Changes" : "Add Grade")
+                    <button type="submit" class="grades-primary-button" disabled="@isSaving">
+                        @(isSaving ? "Saving…" : isEditing ? "Save Changes" : "Add Grade")
                     </button>
 
                 </div>
@@ -453,319 +468,36 @@
 }
 
 @code {
-
-    // MODEL
-
-    public class GradeModel {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Course name is required.")]
-        [StringLength(100, MinimumLength = 2)]
-        public string Course { get; set; } = "";
-
-        [Required(ErrorMessage = "Assessment name is required.")]
-        [StringLength(100, MinimumLength = 2)]
-        public string Assessment { get; set; } = "";
-
-        [Range(typeof(decimal), "0", "100",
-            ErrorMessage = "Score must be between 0 and 100.")]
-        public decimal Score { get; set; }
-
-        [Range(1, 10, ErrorMessage = "Credits must be between 1 and 10.")]
-        public int Credits { get; set; } = 3;
-
-        public DateTime Date { get; set; } = DateTime.Today;
-    }
-
-    // DISTRIBUTION MODEL
-
-    private class DistributionItem {
-        public string Label { get; set; } = "";
-        public string CssClass { get; set; } = "";
-        public int Count { get; set; }
-        public decimal Percentage { get; set; }
-    }
-
-    // MOCK DATA
-
-    private List<GradeModel> grades = new()
-    {
-        new()
-        {
-            Id = 1,
-            Course = "DBMS",
-            Assessment = "Midterm Exam",
-            Score = 95,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-15)
-        },
-
-        new()
-        {
-            Id = 2,
-            Course = "Programming",
-            Assessment = "OOP Project",
-            Score = 88,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-12)
-        },
-
-        new()
-        {
-            Id = 3,
-            Course = "English",
-            Assessment = "Final Presentation",
-            Score = 92,
-            Credits = 3,
-            Date = DateTime.Today.AddDays(-10)
-        },
-
-        new()
-        {
-            Id = 4,
-            Course = "ADS",
-            Assessment = "Algorithms Test",
-            Score = 78,
-            Credits = 5,
-            Date = DateTime.Today.AddDays(-7)
-        },
-
-        new()
-        {
-            Id = 5,
-            Course = "Web Development",
-            Assessment = "Frontend Project",
-            Score = 85,
-            Credits = 4,
-            Date = DateTime.Today.AddDays(-5)
-        },
-
-        new()
-        {
-            Id = 6,
-            Course = "Mathematics",
-            Assessment = "Final Exam",
-            Score = 68,
-            Credits = 4,
-            Date = DateTime.Today.AddDays(-2)
-        }
-    };
-
-    // STATE
-
-    private string searchTerm = "";
-    private string letterFilter = "All";
-
-    private bool showModal = false;
-    private bool isEditing = false;
-
-    private int editingId;
-
-    private GradeModel formModel = new();
-
-    // FILTERING
-
-    private IEnumerable<GradeModel> FilteredGrades =>
-        grades.Where(g =>
-            (string.IsNullOrWhiteSpace(searchTerm) ||
-             g.Course.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-             g.Assessment.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-            &&
-            (letterFilter == "All" ||
-             GetLetter(g.Score).StartsWith(letterFilter,
-                 StringComparison.OrdinalIgnoreCase))
-        );
-
-    // GPA CALCULATION
-    // Weighted by course credits.
-
-    private decimal CurrentGPA {
-        get {
-            if (!grades.Any())
-                return 0;
-
-            int credits = grades.Sum(g => g.Credits);
-
-            if (credits == 0)
-                return 0;
-
-            decimal total = grades.Sum(g =>
-                GetGradePoint(g.Score) * g.Credits);
-
-            return total / credits;
-        }
-    }
-
-    private decimal AverageScore =>
-        grades.Any()
-            ? grades.Average(g => g.Score)
-            : 0;
-
-    private int TotalCredits =>
-        grades.Sum(g => g.Credits);
-
-    private decimal GpaPercentage =>
-        CurrentGPA / 4m * 100m;
-
-    private string PerformanceLabel =>
-        CurrentGPA >= 3.7m ? "Excellent Performance!" :
-        CurrentGPA >= 3.0m ? "Good Performance!" :
-        CurrentGPA >= 2.0m ? "Satisfactory Performance" :
-        grades.Any() ? "Needs Improvement" : "No Grades Yet";
-
-    private string PerformanceDescription =>
-        CurrentGPA >= 3.7m ? "Keep up your excellent academic progress." :
-        CurrentGPA >= 3.0m ? "You are making good academic progress." :
-        CurrentGPA >= 2.0m ? "Keep working towards your academic goals." :
-        grades.Any() ? "Focus on improving your academic results." :
-        "Add your grades to see your progress.";
-
-    // GRADE DISTRIBUTION
-
-    private List<DistributionItem> Distribution {
-        get {
-            var groups = new[]
-            {
-                new { Label = "A / A-", Css = "distribution-a", Match = "A" },
-                new { Label = "B Range", Css = "distribution-b", Match = "B" },
-                new { Label = "C Range", Css = "distribution-c", Match = "C" },
-                new { Label = "D", Css = "distribution-d", Match = "D" },
-                new { Label = "F", Css = "distribution-f", Match = "F" }
-            };
-
-            return groups.Select(group => {
-                int count = grades.Count(g =>
-                    GetLetter(g.Score).StartsWith(group.Match));
-
-                decimal percentage = grades.Count == 0
-                    ? 0
-                    : count * 100m / grades.Count;
-
-                return new DistributionItem {
-                    Label = group.Label,
-                    CssClass = group.Css,
-                    Count = count,
-                    Percentage = percentage
-                };
-
-            }).ToList();
-        }
-    }
-
-    // GPA SCALE
-
-    private decimal GetGradePoint(decimal score) {
-        if (score >= 95) return 4.00m;
-        if (score >= 90) return 3.67m;
-        if (score >= 85) return 3.33m;
-        if (score >= 80) return 3.00m;
-        if (score >= 75) return 2.67m;
-        if (score >= 70) return 2.33m;
-        if (score >= 65) return 2.00m;
-        if (score >= 60) return 1.67m;
-        if (score >= 50) return 1.00m;
-
-        return 0;
-    }
-
-    private string GetLetter(decimal score) {
-        if (score >= 95) return "A";
-        if (score >= 90) return "A-";
-        if (score >= 85) return "B+";
-        if (score >= 80) return "B";
-        if (score >= 75) return "B-";
-        if (score >= 70) return "C+";
-        if (score >= 65) return "C";
-        if (score >= 60) return "C-";
-        if (score >= 50) return "D";
-
-        return "F";
-    }
-
-    private string GradeClass(decimal score) {
-        if (score >= 90) return "grade-a";
-        if (score >= 80) return "grade-b";
-        if (score >= 70) return "grade-c";
-        if (score >= 50) return "grade-d";
-
-        return "grade-f";
-    }
-
-    // CREATE
-
-    private void OpenCreateModal() {
-        formModel = new GradeModel {
-            Date = DateTime.Today,
-            Credits = 3
-        };
-
-        isEditing = false;
-        showModal = true;
-    }
-
-    // EDIT
-
-    private void EditGrade(GradeModel grade) {
-        editingId = grade.Id;
-
-        formModel = new GradeModel {
-            Id = grade.Id,
-            Course = grade.Course,
-            Assessment = grade.Assessment,
-            Score = grade.Score,
-            Credits = grade.Credits,
-            Date = grade.Date
-        };
-
-        isEditing = true;
-        showModal = true;
-    }
-
-    // SAVE
-
-    private void SaveGrade() {
-        if (isEditing) {
-            var existing = grades.FirstOrDefault(g => g.Id == editingId);
-
-            if (existing != null) {
-                existing.Course = formModel.Course;
-                existing.Assessment = formModel.Assessment;
-                existing.Score = formModel.Score;
-                existing.Credits = formModel.Credits;
-                existing.Date = formModel.Date;
-            }
-        } else {
-            formModel.Id = grades.Count == 0
-                ? 1
-                : grades.Max(g => g.Id) + 1;
-
-            grades.Add(formModel);
-        }
-
-        CloseModal();
-    }
-
-    // DELETE
-
-    private void DeleteGrade(int id) {
-        var grade = grades.FirstOrDefault(g => g.Id == id);
-
-        if (grade != null) {
-            grades.Remove(grade);
-        }
-    }
-
-    // FILTER RESET
-
-    private void ResetFilters() {
-        searchTerm = "";
-        letterFilter = "All";
-    }
-
-    // CLOSE
-
-    private void CloseModal() {
-        showModal = false;
-    }
-
+    [Inject] private IGradeService GradeService { get; set; } = default!;
+    [Inject] private ICourseService CourseService { get; set; } = default!;
+    [Inject] private ISettingsService SettingsService { get; set; } = default!;
+    private List<Grade> grades=new(); private List<Course> courses=new(); private GpaScale gpaScale=GpaScale.FourPoint;
+    private string searchTerm="",letterFilter="All",sortBy="Course",errorMessage="";
+    private bool showModal,isEditing,isSaving; private int editingId; private int? pendingDeleteId;
+    private Grade formModel=new();
+    private IEnumerable<Grade> FilteredGrades => (sortBy switch { "Date"=>grades.OrderByDescending(g=>g.Date), "Score"=>grades.OrderByDescending(g=>g.Percentage), _=>grades.OrderBy(g=>g.CourseName) }).Where(g=>(string.IsNullOrWhiteSpace(searchTerm)||g.CourseName.Contains(searchTerm,StringComparison.OrdinalIgnoreCase)||g.Title.Contains(searchTerm,StringComparison.OrdinalIgnoreCase))&&(letterFilter=="All"||GetLetter(g.Percentage).StartsWith(letterFilter,StringComparison.OrdinalIgnoreCase)));
+    protected override async Task OnInitializedAsync(){GradeService.Changed+=OnChanged;CourseService.Changed+=OnChanged;SettingsService.Changed+=OnChanged;await LoadAsync();}
+    private async Task LoadAsync(){try{grades=(await GradeService.GetGradesAsync()).ToList();courses=(await CourseService.GetCoursesAsync()).ToList();gpaScale=(await SettingsService.GetSettingsAsync()).GpaScale;errorMessage="";}catch(Exception ex){Logger.LogError(ex,"Grades could not be loaded.");errorMessage="Grades could not be loaded. Please try again.";}}
+    private void OnChanged()=>_ = InvokeAsync(async()=>{await LoadAsync();StateHasChanged();});
+    private decimal CurrentGPA=>GpaCalculator.Calculate(grades,courses,gpaScale);
+    private decimal AverageScore=>grades.Count==0?0:grades.Average(g=>g.Percentage);
+    private int TotalCredits=>courses.Where(c=>grades.Any(g=>g.CourseId==c.Id)).Sum(c=>c.Credits);
+    private decimal GpaPercentage=>(int)gpaScale==0?0:CurrentGPA/(int)gpaScale*100m;
+    private string PerformanceLabel=>grades.Count==0?"No Grades Yet":CurrentGPA>=((int)gpaScale*.9m)?"Excellent Performance!":CurrentGPA>=((int)gpaScale*.75m)?"Good Performance!":"Keep working towards your academic goals.";
+    private string PerformanceDescription=>grades.Count==0?"Add your grades to see your progress.":"Your GPA uses the selected demonstration scale.";
+    private List<DistributionItem> Distribution=>new (string Label,string Css,string Match)[]{("A / A-","distribution-a","A"),("B Range","distribution-b","B"),("C Range","distribution-c","C"),("D","distribution-d","D"),("F","distribution-f","F")}.Select(x=>{var count=grades.Count(g=>GetLetter(g.Percentage).StartsWith(x.Match));return new DistributionItem{Label=x.Label,CssClass=x.Css,Count=count,Percentage=grades.Count==0?0:count*100m/grades.Count};}).ToList();
+    private sealed class DistributionItem{public string Label{get;set;}="";public string CssClass{get;set;}="";public int Count{get;set;}public decimal Percentage{get;set;}}
+    private decimal GetGradePoint(decimal score)=>GpaCalculator.ConvertPercentage(score,gpaScale);
+    private string GetLetter(decimal score)=>score>=90?"A":score>=80?"B":score>=70?"C":score>=60?"D":"F";
+    private string GradeClass(decimal score)=>score>=90?"grade-a":score>=80?"grade-b":score>=70?"grade-c":score>=60?"grade-d":"grade-f";
+    private void OpenCreateModal(){formModel=new Grade{Date=DateTime.Today,MaxScore=100,Weight=100,Credits=3};isEditing=false;showModal=true;}
+    private void EditGrade(Grade grade){editingId=grade.Id;formModel=new Grade{Id=grade.Id,CourseId=grade.CourseId,CourseName=grade.CourseName,Title=grade.Title,Score=grade.Score,MaxScore=grade.MaxScore,Weight=grade.Weight,Credits=grade.Credits,Date=grade.Date};isEditing=true;showModal=true;}
+    private async Task SaveGrade(){if(isSaving)return;isSaving=true;try{formModel.CourseName=courses.FirstOrDefault(c=>c.Id==formModel.CourseId)?.Code??"";if(isEditing)await GradeService.UpdateGradeAsync(formModel);else await GradeService.CreateGradeAsync(formModel);errorMessage="";await LoadAsync();CloseModal();}catch(ValidationException ex){errorMessage=ex.Message;}catch(Exception ex){Logger.LogError(ex,"Grade save failed for {GradeId}.",formModel.Id);errorMessage="The grade could not be saved. Please try again.";}finally{isSaving=false;}}
+    private void RequestDeleteGrade(int id)=>pendingDeleteId=id;
+    private Task CancelDeleteGrade(){pendingDeleteId=null;return Task.CompletedTask;}
+    private async Task ConfirmDeleteGrade(){if(pendingDeleteId is int id){try{await GradeService.DeleteGradeAsync(id);pendingDeleteId=null;await LoadAsync();}catch(Exception ex){Logger.LogError(ex,"Grade deletion failed for {GradeId}.",id);errorMessage="The grade could not be deleted.";}}}
+    private void ResetFilters(){searchTerm="";letterFilter="All";sortBy="Course";}
+    private void CloseModal()=>showModal=false;
+    private void HandleModalKeyDown(KeyboardEventArgs e){if(e.Key=="Escape"){showModal=false;pendingDeleteId=null;}}
+    public void Dispose(){GradeService.Changed-=OnChanged;CourseService.Changed-=OnChanged;SettingsService.Changed-=OnChanged;}
 }

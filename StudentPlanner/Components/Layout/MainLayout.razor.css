@@ -8,6 +8,7 @@
     --text: #202438;
     --muted: #858ba0;
     --border: #e5e8f0;
+    color-scheme: light;
     --sidebar-width: 260px;
     display: flex;
     width: 100%;
@@ -26,6 +27,7 @@
         --text: #f1f2fa;
         --muted: #999db2;
         --border: #2c3040;
+        color-scheme: dark;
     }
 
 .sidebar {

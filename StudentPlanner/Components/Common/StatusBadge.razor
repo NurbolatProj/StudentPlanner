@@ -1,0 +1,7 @@
+<span class="status-badge @CssClass">@Label</span>
+
+@code {
+    [Parameter, EditorRequired] public AssignmentStatus Status { get; set; }
+    private string Label => Status switch { AssignmentStatus.InProgress => "In Progress", _ => Status.ToString() };
+    private string CssClass => Status == AssignmentStatus.InProgress ? "in-progress" : Status.ToString().ToLowerInvariant();
+}

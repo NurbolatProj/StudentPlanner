@@ -36,3 +36,83 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Shared controls for explicitly opted-in planner forms. This narrow scope
+   leaves page filters, tables, and unrelated controls unchanged. */
+form.planner-form .form-group > label {
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+form.planner-form input:not([type="checkbox"]):not([type="radio"]),
+form.planner-form textarea,
+form.planner-form select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 43px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 11px 12px;
+    background-color: var(--surface-secondary);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    accent-color: var(--primary);
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+form.planner-form textarea {
+    min-height: 86px;
+    resize: vertical;
+}
+
+form.planner-form input::placeholder,
+form.planner-form textarea::placeholder {
+    color: var(--muted);
+    opacity: 1;
+}
+
+form.planner-form input:focus-visible,
+form.planner-form textarea:focus-visible,
+form.planner-form select:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+form.planner-form input.invalid,
+form.planner-form textarea.invalid,
+form.planner-form select.invalid,
+form.planner-form [aria-invalid="true"] {
+    border-color: #e15c64;
+}
+
+form.planner-form input:disabled,
+form.planner-form textarea:disabled,
+form.planner-form select:disabled {
+    cursor: not-allowed;
+    opacity: .58;
+}
+
+form.planner-form input[readonly],
+form.planner-form textarea[readonly] {
+    background-color: var(--background);
+    cursor: default;
+}
+
+form.planner-form input[type="date"],
+form.planner-form input[type="time"] {
+    color-scheme: inherit;
+}
+
+form.planner-form .validation-message {
+    color: #e15c64;
+    font-size: 11px;
+}
+
+form.planner-form button[type="submit"]:disabled {
+    cursor: wait;
+    opacity: .65;
+}

@@ -508,6 +508,53 @@
     font-size: 10px;
 }
 
+/* InputBase components render their native controls inside child components, so use ::deep. */
+::deep .assignment-modal .form-input,
+::deep .assignment-modal input.form-input,
+::deep .assignment-modal textarea.form-input,
+::deep .assignment-modal select.form-input {
+    box-sizing: border-box;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background-color: var(--background);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    padding: 12px;
+    accent-color: #7167ed;
+}
+
+.assignment-modal.dark-controls { color-scheme: dark; }
+.assignment-modal.light-controls { color-scheme: light; }
+
+::deep .assignment-modal .form-input::placeholder { color: var(--muted); opacity: 1; }
+::deep .assignment-modal .form-input:focus-visible {
+    outline: 2px solid #7167ed;
+    outline-offset: 2px;
+    border-color: #7167ed;
+    box-shadow: 0 0 0 3px rgba(113, 103, 237, 0.14);
+}
+::deep .assignment-modal .form-input.invalid,
+::deep .assignment-modal .form-input[aria-invalid="true"] {
+    border-color: #e15c64;
+}
+::deep .assignment-modal .form-input:disabled {
+    opacity: .58;
+    cursor: not-allowed;
+}
+::deep .assignment-modal input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+
+.form-error {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border: 1px solid rgba(225, 92, 100, .45);
+    border-radius: 8px;
+    background: rgba(225, 92, 100, .1);
+    color: #e15c64;
+    font-size: 12px;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;

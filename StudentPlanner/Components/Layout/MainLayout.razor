@@ -1,4 +1,8 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ISettingsService SettingsService
+@inject ISettingsInitializer SettingsInitializer
+@inject ILogger<MainLayout> Logger
 
 <CascadingValue Value="this">
     <div class="app-shell @(isDark ? "dark" : "light")">
@@ -110,6 +114,30 @@
 
     private bool isMenuOpen = false;
 
+    protected override void OnInitialized() => SettingsService.Changed += OnSettingsChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (!firstRender) return;
+        await SettingsInitializer.InitializeAsync();
+        await ApplySavedSettingsAsync();
+    }
+
+    private void OnSettingsChanged() => _ = InvokeAsync(async () => {
+        try {
+            await ApplySavedSettingsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex) {
+            Logger.LogError(ex, "Saved preferences could not be applied to the application shell.");
+        }
+    });
+
+    private async Task ApplySavedSettingsAsync() {
+        var settings = await SettingsService.GetSettingsAsync();
+        isDark = settings.Theme == ThemePreference.Dark;
+        CurrentLanguage = "English";
+    }
+
     public void SetTheme(string selectedTheme) {
         isDark = selectedTheme == "Dark";
         StateHasChanged();
@@ -120,8 +148,18 @@
         StateHasChanged();
     }
 
-    private void ToggleTheme() {
+    private async Task ToggleTheme() {
+        var previousTheme = isDark;
         isDark = !isDark;
+        try {
+            var settings = await SettingsService.GetSettingsAsync();
+            settings.Theme = isDark ? ThemePreference.Dark : ThemePreference.Light;
+            await SettingsService.SaveSettingsAsync(settings);
+        }
+        catch (Exception ex) {
+            isDark = previousTheme;
+            Logger.LogError(ex, "Theme preference could not be saved.");
+        }
     }
 
     private void ToggleMenu() {
@@ -132,57 +170,8 @@
         isMenuOpen = false;
     }
 
-    public string T(string key) {
-        var translations = new Dictionary<string, Dictionary<string, string>> {
-            ["English"] = new() {
-                ["workspace"] = "STUDENT WORKSPACE",
-                ["workspace_section"] = "WORKSPACE",
-                ["dashboard"] = "Dashboard",
-                ["calendar"] = "Calendar",
-                ["assignments"] = "Assignments",
-                ["courses"] = "Courses",
-                ["grades"] = "Grades & Analytics",
-                ["preferences"] = "PREFERENCES",
-                ["settings"] = "Settings",
-                ["student_account"] = "Student Account",
-                ["learning_space"] = "Your learning space",
-                ["switch_theme"] = "Switch theme"
-            },
-            ["Русский"] = new() {
-                ["workspace"] = "СТУДЕНЧЕСКОЕ ПРОСТРАНСТВО",
-                ["workspace_section"] = "РАБОЧАЯ ОБЛАСТЬ",
-                ["dashboard"] = "Главная",
-                ["calendar"] = "Календарь",
-                ["assignments"] = "Задания",
-                ["courses"] = "Курсы",
-                ["grades"] = "Оценки и аналитика",
-                ["preferences"] = "НАСТРОЙКИ",
-                ["settings"] = "Настройки",
-                ["student_account"] = "Студенческий аккаунт",
-                ["learning_space"] = "Твоё учебное пространство",
-                ["switch_theme"] = "Сменить тему"
-            },
-            ["Қазақша"] = new() {
-                ["workspace"] = "СТУДЕНТТІК КЕҢІСТІК",
-                ["workspace_section"] = "ЖҰМЫС АЙМАҒЫ",
-                ["dashboard"] = "Басты бет",
-                ["calendar"] = "Күнтізбе",
-                ["assignments"] = "Тапсырмалар",
-                ["courses"] = "Курстар",
-                ["grades"] = "Бағалар мен аналитика",
-                ["preferences"] = "БАПТАУЛАР",
-                ["settings"] = "Баптаулар",
-                ["student_account"] = "Студент аккаунты",
-                ["learning_space"] = "Сіздің оқу кеңістігіңіз",
-                ["switch_theme"] = "Тақырыпты өзгерту"
-            }
-        };
-
-        if (translations.TryGetValue(CurrentLanguage, out var language) &&
-            language.TryGetValue(key, out var translated)) {
-            return translated;
-        }
-
-        return key;
-    }
+    public string T(string key) => new Dictionary<string,string> {
+        ["workspace"]="STUDENT WORKSPACE",["workspace_section"]="WORKSPACE",["dashboard"]="Dashboard",["calendar"]="Calendar",["assignments"]="Assignments",["courses"]="Courses",["grades"]="Grades & Analytics",["preferences"]="PREFERENCES",["settings"]="Settings",["student_account"]="Student Account",["learning_space"]="Your learning space",["switch_theme"]="Switch theme"
+    }.GetValueOrDefault(key,key);
+    public void Dispose() => SettingsService.Changed -= OnSettingsChanged;
 }

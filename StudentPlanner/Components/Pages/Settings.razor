@@ -1,4 +1,6 @@
 ﻿@page "/settings"
+@using System.ComponentModel.DataAnnotations
+@implements IDisposable
 @using StudentPlanner.Components.Layout
 
 <PageTitle>Settings</PageTitle>
@@ -44,9 +46,10 @@
 
             <div class="form-group">
                 <label>@ST("email")</label>
-                <input type="email" @bind="email" />
+                <input type="email" @bind="email" aria-describedby="email-validation" />
             </div>
 
+            <div id="email-validation" class="validation-message" role="alert">@emailError</div>
             <div class="form-group">
                 <label>@ST("student_id")</label>
                 <input @bind="studentId" />
@@ -161,8 +164,7 @@
                 <label>@ST("language")</label>
                 <select @bind="language" @bind:after="ApplyLanguage">
                     <option value="English">English</option>
-                    <option value="Русский">Русский</option>
-                    <option value="Қазақша">Қазақша</option>
+
                 </select>
             </div>
 
@@ -259,6 +261,9 @@
 @code {
     [CascadingParameter]
     public MainLayout? Layout { get; set; }
+    [Inject] private ISettingsService SettingsService { get; set; } = default!;
+    [Inject] private ISettingsInitializer SettingsInitializer { get; set; } = default!;
+    [Inject] private ILogger<Settings> Logger { get; set; } = default!;
 
     private string fullName = "Nurbolat Otep";
     private string email = "student@astanait.edu.kz";
@@ -279,13 +284,22 @@
     private bool weeklySummary;
 
     private string message = "";
+    private string emailError = "";
 
-    protected override void OnInitialized() {
-        if (Layout is not null) {
-            theme = Layout.isDark ? "Dark" : "Light";
-            language = Layout.CurrentLanguage;
-        }
+    protected override void OnInitialized() => SettingsService.Changed += OnSettingsChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (!firstRender) return;
+        await SettingsInitializer.InitializeAsync();
+        var settings = await SettingsService.GetSettingsAsync();
+        fullName=settings.FullName; email=settings.Email; theme=settings.Theme.ToString(); language="English";
+        timeZone=settings.TimeZone; semester=settings.Semester; academicYear=settings.AcademicYear; gpaScale=((int)settings.GpaScale).ToString("0.0");
+        assignmentNotifications=settings.NotificationPreferences.AssignmentReminders; examNotifications=settings.NotificationPreferences.ExamReminders;
+        deadlineNotifications=settings.NotificationPreferences.DeadlineAlerts; weeklySummary=settings.NotificationPreferences.WeeklySummary;
+        studentId=settings.StudentId; program=settings.Program;
+        Layout?.SetTheme(theme); StateHasChanged();
     }
+    private void OnSettingsChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void ApplyTheme() {
         Layout?.SetTheme(theme);
@@ -306,20 +320,25 @@
             : fullName.Trim().Substring(0, 1).ToUpper();
     }
 
-    private void SaveSettings() {
-        if (string.IsNullOrWhiteSpace(fullName) ||
-            string.IsNullOrWhiteSpace(email) ||
-            !email.Contains('@')) {
+    private async Task SaveSettings() {
+        var student = new Student { FullName = fullName, Email = email };
+        var results = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(student, new ValidationContext(student), results, true)) {
+            emailError = results.FirstOrDefault(r => r.MemberNames.Contains(nameof(Student.Email)))?.ErrorMessage ?? "Please enter a valid email address.";
             message = ST("validation_error");
             return;
         }
-
-        ApplyTheme();
-        ApplyLanguage();
-        message = ST("saved");
+        if (!decimal.TryParse(gpaScale, out var scaleValue) || !Enum.IsDefined(typeof(GpaScale), (int)scaleValue)) {
+            message = "Select a supported GPA scale."; return;
+        }
+        emailError = "";
+        var settings = new StudentSettings { FullName=fullName, StudentId=studentId, Program=program, Email=email, Theme=Enum.Parse<ThemePreference>(theme), Language=AppLanguage.English,
+            TimeZone=timeZone, Semester=semester, AcademicYear=academicYear, GpaScale=(GpaScale)(int)scaleValue,
+            NotificationPreferences=new(){AssignmentReminders=assignmentNotifications,ExamReminders=examNotifications,DeadlineAlerts=deadlineNotifications,WeeklySummary=weeklySummary} };
+        try { await SettingsService.SaveSettingsAsync(settings); ApplyTheme(); ApplyLanguage(); message="Settings saved in this browser."; }
+        catch (Exception ex) { Logger.LogError(ex, "Settings could not be saved."); message="Settings could not be saved in this browser."; }
     }
-
-    private void ResetSettings() {
+    private async Task ResetSettings() {
         fullName = "Nurbolat Otep";
         email = "student@astanait.edu.kz";
         studentId = "IT-2508";
@@ -342,153 +361,11 @@
         ApplyLanguage();
 
         message = ST("reset_done");
+        await SaveSettings();
     }
 
-    private string ST(string key) {
-        var ru = new Dictionary<string, string> {
-            ["title"] = "Настройки",
-            ["subtitle"] = "Управляйте своим аккаунтом и предпочтениями.",
-            ["profile"] = "Профиль",
-            ["profile_desc"] = "Измените личную информацию.",
-            ["full_name"] = "Полное имя",
-            ["email"] = "Электронная почта",
-            ["student_id"] = "ID студента",
-            ["program"] = "Образовательная программа",
-            ["appearance"] = "Внешний вид",
-            ["appearance_desc"] = "Настройте оформление приложения.",
-            ["theme"] = "Тема оформления",
-            ["dark_desc"] = "Тёмное оформление",
-            ["light_desc"] = "Светлое оформление",
-            ["notifications"] = "Уведомления",
-            ["notifications_desc"] = "Управляйте уведомлениями.",
-            ["assignment_reminders"] = "Напоминания о заданиях",
-            ["assignment_reminders_desc"] = "Напоминания о предстоящих заданиях.",
-            ["exam_reminders"] = "Напоминания об экзаменах",
-            ["exam_reminders_desc"] = "Уведомления перед экзаменами.",
-            ["deadline_alerts"] = "Уведомления о сроках",
-            ["deadline_alerts_desc"] = "Напоминания о приближающихся сроках.",
-            ["weekly_summary"] = "Еженедельный отчёт",
-            ["weekly_summary_desc"] = "Сводка учебного прогресса за неделю.",
-            ["language_region"] = "Язык и регион",
-            ["language_desc"] = "Выберите язык и часовой пояс.",
-            ["language"] = "Язык приложения",
-            ["timezone"] = "Часовой пояс",
-            ["language_note"] = "Язык меню и этой страницы изменяется сразу.",
-            ["academic"] = "Учебные настройки",
-            ["academic_desc"] = "Настройте учебную информацию.",
-            ["semester"] = "Семестр",
-            ["academic_year"] = "Учебный год",
-            ["gpa_scale"] = "Шкала GPA",
-            ["account"] = "Аккаунт",
-            ["account_desc"] = "Состояние аккаунта.",
-            ["active"] = "Аккаунт активен",
-            ["active_desc"] = "Всё работает нормально.",
-            ["reset"] = "Сбросить",
-            ["changes_note"] = "Не забудьте сохранить изменения.",
-            ["save"] = "Сохранить изменения",
-            ["saved"] = "Настройки применены!",
-            ["reset_done"] = "Настройки сброшены.",
-            ["validation_error"] = "Проверьте имя и адрес электронной почты."
-        };
-
-        var kk = new Dictionary<string, string> {
-            ["title"] = "Баптаулар",
-            ["subtitle"] = "Аккаунт пен қолданба параметрлерін басқарыңыз.",
-            ["profile"] = "Профиль",
-            ["profile_desc"] = "Жеке ақпаратыңызды өзгертіңіз.",
-            ["full_name"] = "Толық аты-жөні",
-            ["email"] = "Электрондық пошта",
-            ["student_id"] = "Студент ID",
-            ["program"] = "Білім беру бағдарламасы",
-            ["appearance"] = "Сыртқы көрініс",
-            ["appearance_desc"] = "Қолданбаның көрінісін реттеңіз.",
-            ["theme"] = "Тақырып",
-            ["dark_desc"] = "Қараңғы тақырып",
-            ["light_desc"] = "Жарық тақырып",
-            ["notifications"] = "Хабарландырулар",
-            ["notifications_desc"] = "Хабарландыруларды басқарыңыз.",
-            ["assignment_reminders"] = "Тапсырма еске салғыштары",
-            ["assignment_reminders_desc"] = "Алдағы тапсырмалар туралы еске салу.",
-            ["exam_reminders"] = "Емтихан еске салғыштары",
-            ["exam_reminders_desc"] = "Емтихан алдында хабарлау.",
-            ["deadline_alerts"] = "Мерзім туралы ескертулер",
-            ["deadline_alerts_desc"] = "Жақындаған мерзімдер туралы ескерту.",
-            ["weekly_summary"] = "Апталық есеп",
-            ["weekly_summary_desc"] = "Апталық оқу үлгерімінің есебі.",
-            ["language_region"] = "Тіл және аймақ",
-            ["language_desc"] = "Тіл мен уақыт белдеуін таңдаңыз.",
-            ["language"] = "Қолданба тілі",
-            ["timezone"] = "Уақыт белдеуі",
-            ["language_note"] = "Мәзір мен осы беттің тілі бірден өзгереді.",
-            ["academic"] = "Оқу параметрлері",
-            ["academic_desc"] = "Оқу ақпаратыңызды реттеңіз.",
-            ["semester"] = "Семестр",
-            ["academic_year"] = "Оқу жылы",
-            ["gpa_scale"] = "GPA шкаласы",
-            ["account"] = "Аккаунт",
-            ["account_desc"] = "Аккаунт күйі.",
-            ["active"] = "Аккаунт белсенді",
-            ["active_desc"] = "Барлығы дұрыс жұмыс істеп тұр.",
-            ["reset"] = "Қалпына келтіру",
-            ["changes_note"] = "Өзгерістерді сақтауды ұмытпаңыз.",
-            ["save"] = "Өзгерістерді сақтау",
-            ["saved"] = "Баптаулар қолданылды!",
-            ["reset_done"] = "Баптаулар қалпына келтірілді.",
-            ["validation_error"] = "Атыңыз бен электрондық поштаңызды тексеріңіз."
-        };
-
-        if (language == "Русский" && ru.TryGetValue(key, out var russian))
-            return russian;
-
-        if (language == "Қазақша" && kk.TryGetValue(key, out var kazakh))
-            return kazakh;
-
-        var en = new Dictionary<string, string> {
-            ["title"] = "Settings",
-            ["subtitle"] = "Manage your account and application preferences.",
-            ["profile"] = "Profile Settings",
-            ["profile_desc"] = "Update your personal information.",
-            ["full_name"] = "Full Name",
-            ["email"] = "Email Address",
-            ["student_id"] = "Student ID",
-            ["program"] = "Study Program",
-            ["appearance"] = "Appearance",
-            ["appearance_desc"] = "Customize how StudentPlanner looks.",
-            ["theme"] = "Theme",
-            ["dark_desc"] = "Dark appearance",
-            ["light_desc"] = "Light appearance",
-            ["notifications"] = "Notifications",
-            ["notifications_desc"] = "Control which notifications you receive.",
-            ["assignment_reminders"] = "Assignment Reminders",
-            ["assignment_reminders_desc"] = "Get reminded about upcoming assignments.",
-            ["exam_reminders"] = "Exam Reminders",
-            ["exam_reminders_desc"] = "Receive notifications before exams.",
-            ["deadline_alerts"] = "Deadline Alerts",
-            ["deadline_alerts_desc"] = "Get notified about approaching deadlines.",
-            ["weekly_summary"] = "Weekly Summary",
-            ["weekly_summary_desc"] = "Receive a weekly study progress summary.",
-            ["language_region"] = "Language & Region",
-            ["language_desc"] = "Set your language and regional preferences.",
-            ["language"] = "Application Language",
-            ["timezone"] = "Time Zone",
-            ["language_note"] = "The menu and this page change language immediately.",
-            ["academic"] = "Academic Preferences",
-            ["academic_desc"] = "Configure your academic information.",
-            ["semester"] = "Current Semester",
-            ["academic_year"] = "Academic Year",
-            ["gpa_scale"] = "GPA Scale",
-            ["account"] = "Account",
-            ["account_desc"] = "Account status.",
-            ["active"] = "Account Active",
-            ["active_desc"] = "Everything is working normally.",
-            ["reset"] = "Reset Settings",
-            ["changes_note"] = "Remember to save your changes.",
-            ["save"] = "Save Changes",
-            ["saved"] = "Settings applied!",
-            ["reset_done"] = "Settings have been reset.",
-            ["validation_error"] = "Please check your name and email address."
-        };
-
-        return en.TryGetValue(key, out var english) ? english : key;
-    }
+    private string ST(string key) => new Dictionary<string,string> {
+        ["title"]="Settings",["subtitle"]="Manage your account and application preferences.",["profile"]="Profile Settings",["profile_desc"]="Update your personal information.",["full_name"]="Full Name",["email"]="Email Address",["student_id"]="Student ID",["program"]="Study Program",["appearance"]="Appearance",["appearance_desc"]="Customize how StudentPlanner looks.",["theme"]="Theme",["dark_desc"]="Dark appearance",["light_desc"]="Light appearance",["notifications"]="Notifications",["notifications_desc"]="Control which notifications you receive.",["assignment_reminders"]="Assignment Reminders",["assignment_reminders_desc"]="Get reminded about upcoming assignments.",["exam_reminders"]="Exam Reminders",["exam_reminders_desc"]="Receive notifications before exams.",["deadline_alerts"]="Deadline Alerts",["deadline_alerts_desc"]="Get notified about approaching deadlines.",["weekly_summary"]="Weekly Summary",["weekly_summary_desc"]="Receive a weekly study progress summary.",["language_region"]="Language & Region",["language_desc"]="Set your language and regional preferences.",["language"]="Application Language",["timezone"]="Time Zone",["language_note"]="The application currently supports English.",["academic"]="Academic Preferences",["academic_desc"]="Configure your academic information.",["semester"]="Current Semester",["academic_year"]="Academic Year",["gpa_scale"]="GPA Scale",["account"]="Account",["account_desc"]="Account status.",["active"]="Account Active",["active_desc"]="Everything is working normally.",["reset"]="Reset Settings",["changes_note"]="Remember to save your changes.",["save"]="Save Changes",["saved"]="Settings saved.",["reset_done"]="Settings have been reset.",["validation_error"]="Please check your name and email address."
+    }.GetValueOrDefault(key,key);
+    public void Dispose() => SettingsService.Changed -= OnSettingsChanged;
 }

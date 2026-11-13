@@ -1,5 +1,7 @@
-﻿@page "/courses"
+@page "/courses"
+@implements IDisposable
 @using System.ComponentModel.DataAnnotations
+@inject ILogger<Courses> Logger
 
 <PageTitle>Courses | StudentPlanner</PageTitle>
 
@@ -84,6 +86,7 @@
                 <option value="Inactive">Inactive</option>
             </select>
 
+            <select class="course-filter" @bind="sortBy" aria-label="Sort courses"><option value="Name">Sort by name</option><option value="Code">Sort by code</option><option value="Credits">Sort by credits</option></select>
             <button class="course-reset-button" @onclick="ResetFilters">
                 Reset
             </button>
@@ -120,7 +123,7 @@
                                 </button>
 
                                 <button title="Delete"
-                                        @onclick="() => DeleteCourse(course.Id)">
+                                        @onclick="() => RequestDeleteCourse(course.Id)">
                                     🗑
                                 </button>
                             </div>
@@ -187,11 +190,13 @@
 
 </div>
 
+@if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="settings-message" role="alert">@errorMessage</p> }
+@if (pendingDeleteId is not null) { <ConfirmDialog Title="Delete this course?" Message="Courses with grades or assignments cannot be deleted." ConfirmText="Delete course" OnConfirm="ConfirmDeleteCourse" OnCancel="CancelDeleteCourse" /> }
 <!-- CREATE / EDIT MODAL -->
 @if (showModal) {
-    <div class="course-modal-overlay" @onclick="CloseModal">
+    <div class="course-modal-overlay" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
 
-        <div class="course-modal" @onclick:stopPropagation="true">
+        <div class="course-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" tabindex="-1">
 
             <div class="course-modal-header">
 
@@ -201,15 +206,16 @@
                     <p>Enter your subject information below.</p>
                 </div>
 
-                <button class="course-close-button" @onclick="CloseModal">
+                <button class="course-close-button" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                     ×
                 </button>
 
             </div>
 
-            <EditForm Model="formModel" OnValidSubmit="SaveCourse">
+            <EditForm Model="formModel" OnValidSubmit="SaveCourse" class="planner-form">
 
                 <DataAnnotationsValidator />
+                @if (!string.IsNullOrWhiteSpace(errorMessage)) { <div class="course-form-error" role="alert">@errorMessage</div> }
 
                 <div class="course-form-group">
                     <label>Course Name *</label>
@@ -300,12 +306,12 @@
 
                     <button type="button"
                             class="course-cancel-button"
-                            @onclick="CloseModal">
+                            @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                         Cancel
                     </button>
 
-                    <button type="submit" class="course-primary-button">
-                        @(isEditing ? "Save Changes" : "Create Course")
+                    <button type="submit" class="course-primary-button" disabled="@isSaving">
+                        @(isSaving ? "Saving…" : isEditing ? "Save Changes" : "Create Course")
                     </button>
 
                 </div>
@@ -319,10 +325,10 @@
 
 <!-- COURSE DETAILS MODAL -->
 @if (selectedCourse != null) {
-    <div class="course-modal-overlay" @onclick="CloseDetails">
+    <div class="course-modal-overlay" @onclick="CloseDetails" @onkeydown="HandleModalKeyDown">
 
         <div class="course-modal details-modal"
-             @onclick:stopPropagation="true">
+             @onclick:stopPropagation="true" role="dialog" aria-modal="true" tabindex="-1">
 
             <div class="course-modal-header">
 
@@ -332,7 +338,7 @@
                     <p>@selectedCourse.Code</p>
                 </div>
 
-                <button class="course-close-button" @onclick="CloseDetails">
+                <button class="course-close-button" @onclick="CloseDetails" @onkeydown="HandleModalKeyDown">
                     ×
                 </button>
 
@@ -378,7 +384,7 @@
 
             <div class="course-modal-actions">
                 <button class="course-cancel-button"
-                        @onclick="CloseDetails">
+                        @onclick="CloseDetails" @onkeydown="HandleModalKeyDown">
                     Close
                 </button>
 
@@ -394,255 +400,37 @@
 }
 
 @code {
-
-    // MODEL
-
-    public class CourseModel {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Course name is required.")]
-        [StringLength(100, MinimumLength = 3,
-            ErrorMessage = "Name must contain 3-100 characters.")]
-        public string Name { get; set; } = "";
-
-        [Required(ErrorMessage = "Course code is required.")]
-        [StringLength(15, MinimumLength = 2)]
-        public string Code { get; set; } = "";
-
-        [Required(ErrorMessage = "Instructor is required.")]
-        public string Instructor { get; set; } = "";
-
-        [Range(1, 10, ErrorMessage = "Credits must be between 1 and 10.")]
-        public int Credits { get; set; } = 3;
-
-        public string Room { get; set; } = "";
-
-        public string Schedule { get; set; } = "";
-
-        public string Color { get; set; } = "purple";
-
-        public bool IsActive { get; set; } = true;
-
-        [StringLength(500)]
-        public string Description { get; set; } = "";
+    [Inject] private ICourseService CourseService { get; set; } = default!;
+    [Inject] private IAssignmentService AssignmentService { get; set; } = default!;
+    [Inject] private IGradeService GradeService { get; set; } = default!;
+    private List<Course> courses=new();
+    private string searchTerm="", statusFilter="All", errorMessage="", sortBy="Name";
+    private bool showModal,isEditing,isSaving;
+    private int editingId; private int? pendingDeleteId;
+    private Course formModel=new();
+    private Course? selectedCourse;
+    private IEnumerable<Course> FilteredCourses => (sortBy switch { "Code"=>courses.OrderBy(c=>c.Code), "Credits"=>courses.OrderByDescending(c=>c.Credits), _=>courses.OrderBy(c=>c.Name) }).Where(c =>
+        (string.IsNullOrWhiteSpace(searchTerm) || c.Name.Contains(searchTerm,StringComparison.OrdinalIgnoreCase) || c.Code.Contains(searchTerm,StringComparison.OrdinalIgnoreCase) || c.Instructor.Contains(searchTerm,StringComparison.OrdinalIgnoreCase)) &&
+        (statusFilter=="All" || (statusFilter=="Active"&&c.IsActive) || (statusFilter=="Inactive"&&!c.IsActive)));
+    protected override async Task OnInitializedAsync(){CourseService.Changed+=OnChanged;await LoadAsync();}
+    private async Task LoadAsync(){try{courses=(await CourseService.GetCoursesAsync()).ToList();errorMessage="";}catch(Exception ex){Logger.LogError(ex,"Courses could not be loaded.");errorMessage="Courses could not be loaded. Please try again.";}}
+    private void OnChanged()=>_ = InvokeAsync(async()=>{await LoadAsync();StateHasChanged();});
+    private void OpenCreateModal(){formModel=new Course();isEditing=false;showModal=true;}
+    private void EditCourse(Course course){editingId=course.Id;formModel=new Course{Id=course.Id,Name=course.Name,Code=course.Code,Instructor=course.Instructor,Credits=course.Credits,Room=course.Room,Schedule=course.Schedule,Color=course.Color,IsActive=course.IsActive,Description=course.Description};selectedCourse=null;isEditing=true;showModal=true;}
+    private async Task SaveCourse(){if(isSaving)return;isSaving=true;try{if(isEditing)await CourseService.UpdateCourseAsync(formModel);else await CourseService.CreateCourseAsync(formModel);errorMessage="";await LoadAsync();CloseModal();}catch(ValidationException ex){errorMessage=ex.Message;}catch(Exception ex){Logger.LogError(ex,"Course save failed for {CourseId}.",formModel.Id);errorMessage="The course could not be saved. Please try again.";}finally{isSaving=false;}}
+    private void RequestDeleteCourse(int id)=>pendingDeleteId=id;
+    private Task CancelDeleteCourse(){pendingDeleteId=null;return Task.CompletedTask;}
+    private async Task ConfirmDeleteCourse(){
+        if(pendingDeleteId is not int id)return;
+        var assignments=await AssignmentService.GetAssignmentsAsync(); var grades=await GradeService.GetGradesAsync();
+        if(assignments.Any(a=>a.CourseId==id)||grades.Any(g=>g.CourseId==id)){errorMessage="This course still has assignments or grades. Reassign or remove them before deleting the course.";pendingDeleteId=null;return;}
+        try{await CourseService.DeleteCourseAsync(id);pendingDeleteId=null;await LoadAsync();if(selectedCourse?.Id==id)selectedCourse=null;}catch(Exception ex){Logger.LogError(ex,"Course deletion failed for {CourseId}.",id);errorMessage="The course could not be deleted.";}
     }
-
-    // MOCK DATA
-
-    private List<CourseModel> courses = new()
-    {
-        new()
-        {
-            Id = 1,
-            Name = "Database Management Systems",
-            Code = "DBMS",
-            Instructor = "Pavel Tsoi",
-            Credits = 5,
-            Room = "C1.2.301",
-            Schedule = "Mon / Wed · 14:00",
-            Color = "purple",
-            Description = "Learn database design, SQL, normalization and database management.",
-            IsActive = true
-        },
-
-        new()
-        {
-            Id = 2,
-            Name = "Object Oriented Programming",
-            Code = "OOP",
-            Instructor = "Alex Johnson",
-            Credits = 5,
-            Room = "B2.1.205",
-            Schedule = "Tue / Thu · 10:00",
-            Color = "blue",
-            Description = "Learn object-oriented programming principles and C# and Java development.",
-            IsActive = true
-        },
-
-        new()
-        {
-            Id = 3,
-            Name = "Algorithms and Data Structures",
-            Code = "ADS",
-            Instructor = "Michael Brown",
-            Credits = 5,
-            Room = "A3.1.102",
-            Schedule = "Mon / Fri · 12:00",
-            Color = "green",
-            Description = "Study algorithms, data structures and computational complexity.",
-            IsActive = true
-        },
-
-        new()
-        {
-            Id = 4,
-            Name = "English Language",
-            Code = "ENG",
-            Instructor = "Sarah Williams",
-            Credits = 3,
-            Room = "C2.3.101",
-            Schedule = "Wed / Fri · 09:00",
-            Color = "orange",
-            Description = "Improve academic English, communication and presentation skills.",
-            IsActive = true
-        },
-
-        new()
-        {
-            Id = 5,
-            Name = "Web Development",
-            Code = "WEB",
-            Instructor = "David Miller",
-            Credits = 4,
-            Room = "D1.2.201",
-            Schedule = "Tue / Thu · 14:00",
-            Color = "pink",
-            Description = "Learn modern web technologies and build interactive web applications.",
-            IsActive = true
-        },
-
-        new()
-        {
-            Id = 6,
-            Name = "Mathematics",
-            Code = "MATH",
-            Instructor = "Robert Wilson",
-            Credits = 4,
-            Room = "A1.1.305",
-            Schedule = "Thu · 16:00",
-            Color = "blue",
-            Description = "Study mathematical foundations for computer science.",
-            IsActive = false
-        }
-    };
-
-    // STATE
-
-    private string searchTerm = "";
-    private string statusFilter = "All";
-
-    private bool showModal = false;
-    private bool isEditing = false;
-
-    private int editingId;
-
-    private CourseModel formModel = new();
-
-    private CourseModel? selectedCourse;
-
-    // FILTERING
-
-    private IEnumerable<CourseModel> FilteredCourses =>
-        courses.Where(c =>
-            (string.IsNullOrWhiteSpace(searchTerm) ||
-             c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-             c.Code.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-             c.Instructor.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-            &&
-            (statusFilter == "All" ||
-             (statusFilter == "Active" && c.IsActive) ||
-             (statusFilter == "Inactive" && !c.IsActive))
-        );
-
-    // CREATE
-
-    private void OpenCreateModal() {
-        formModel = new CourseModel();
-        isEditing = false;
-        showModal = true;
-    }
-
-    // EDIT
-
-    private void EditCourse(CourseModel course) {
-        editingId = course.Id;
-
-        formModel = new CourseModel {
-            Id = course.Id,
-            Name = course.Name,
-            Code = course.Code,
-            Instructor = course.Instructor,
-            Credits = course.Credits,
-            Room = course.Room,
-            Schedule = course.Schedule,
-            Color = course.Color,
-            IsActive = course.IsActive,
-            Description = course.Description
-        };
-
-        selectedCourse = null;
-        isEditing = true;
-        showModal = true;
-    }
-
-    // SAVE
-
-    private void SaveCourse() {
-        if (isEditing) {
-            var existing = courses.FirstOrDefault(c => c.Id == editingId);
-
-            if (existing != null) {
-                existing.Name = formModel.Name;
-                existing.Code = formModel.Code;
-                existing.Instructor = formModel.Instructor;
-                existing.Credits = formModel.Credits;
-                existing.Room = formModel.Room;
-                existing.Schedule = formModel.Schedule;
-                existing.Color = formModel.Color;
-                existing.IsActive = formModel.IsActive;
-                existing.Description = formModel.Description;
-            }
-        } else {
-            formModel.Id = courses.Count == 0
-                ? 1
-                : courses.Max(c => c.Id) + 1;
-
-            courses.Add(formModel);
-        }
-
-        CloseModal();
-    }
-
-    // DELETE
-
-    private void DeleteCourse(int id) {
-        var course = courses.FirstOrDefault(c => c.Id == id);
-
-        if (course != null) {
-            courses.Remove(course);
-        }
-
-        if (selectedCourse?.Id == id) {
-            selectedCourse = null;
-        }
-    }
-
-    // VIEW DETAILS
-
-    private void ViewCourse(CourseModel course) {
-        selectedCourse = course;
-    }
-
-    private void CloseDetails() {
-        selectedCourse = null;
-    }
-
-    // TOGGLE STATUS
-
-    private void ToggleCourseStatus(CourseModel course) {
-        course.IsActive = !course.IsActive;
-    }
-
-    // RESET
-
-    private void ResetFilters() {
-        searchTerm = "";
-        statusFilter = "All";
-    }
-
-    // CLOSE
-
-    private void CloseModal() {
-        showModal = false;
-    }
+    private void ViewCourse(Course course)=>selectedCourse=course;
+    private void CloseDetails()=>selectedCourse=null;
+    private async Task ToggleCourseStatus(Course course){var wasActive=course.IsActive;course.IsActive=!wasActive;try{var updated=await CourseService.UpdateCourseAsync(course);if(updated is null){course.IsActive=wasActive;errorMessage="This course is no longer available.";}}catch(Exception ex){course.IsActive=wasActive;Logger.LogError(ex,"Course status update failed for {CourseId}.",course.Id);errorMessage="The course status could not be updated.";await LoadAsync();}}
+    private void ResetFilters(){searchTerm="";statusFilter="All";sortBy="Name";}
+    private void CloseModal()=>showModal=false;
+    private void HandleModalKeyDown(KeyboardEventArgs e){if(e.Key=="Escape"){showModal=false;selectedCourse=null;pendingDeleteId=null;}}
+    public void Dispose()=>CourseService.Changed-=OnChanged;
 }

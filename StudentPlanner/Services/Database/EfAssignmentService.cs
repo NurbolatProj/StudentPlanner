@@ -7,21 +7,23 @@ using StudentPlanner.Services.Interfaces;
 
 namespace StudentPlanner.Services.Database;
 
-public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory, ILogger<EfAssignmentService> logger)
-    : EfServiceBase<EfAssignmentService>(factory, logger), IAssignmentService, IAssignmentQueryService
+public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory, ILogger<EfAssignmentService> logger, ICurrentUserService currentUser)
+    : EfServiceBase<EfAssignmentService>(factory, logger, currentUser), IAssignmentService, IAssignmentQueryService
 {
     public async Task<IReadOnlyList<Assignment>> GetAssignmentsAsync(CancellationToken cancellationToken = default)
     {
+        var ownerId = await GetUserIdAsync(cancellationToken);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        var items = await db.Assignments.AsNoTracking().Include(item => item.Course).OrderBy(item => item.DueDate).ToListAsync(cancellationToken);
+        var items = await db.Assignments.AsNoTracking().Where(item => item.OwnerId == ownerId).Include(item => item.Course).OrderBy(item => item.DueDate).ToListAsync(cancellationToken);
         return items.Select(ToFrontendModel).ToArray();
     }
 
     public async Task<IReadOnlyList<Assignment>> FindAssignmentsAsync(AssignmentQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        var ownerId = await GetUserIdAsync(cancellationToken);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        var filtered = db.Assignments.AsNoTracking().Include(item => item.Course).AsQueryable();
+        var filtered = db.Assignments.AsNoTracking().Where(item => item.OwnerId == ownerId).Include(item => item.Course).AsQueryable();
         if (query.CourseId is int courseId) filtered = filtered.Where(item => item.CourseId == courseId);
         if (query.Status is AssignmentStatus status) filtered = filtered.Where(item => item.Status == status);
         if (query.Priority is AssignmentPriority priority) filtered = filtered.Where(item => item.Priority == priority);
@@ -37,9 +39,10 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
     {
         ArgumentNullException.ThrowIfNull(assignment);
         var entity = Normalize(assignment);
+        entity.OwnerId = await GetUserIdAsync(cancellationToken);
         Validate(entity);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        await EnsureCourseExistsAsync(db, entity.CourseId, cancellationToken);
+        await EnsureCourseExistsAsync(db, entity.CourseId, entity.OwnerId, cancellationToken);
         entity.CompletedAt = entity.Status == AssignmentStatus.Completed ? entity.CompletedAt ?? DateTime.Now : null;
         db.Assignments.Add(entity);
         try { await db.SaveChangesAsync(cancellationToken); }
@@ -47,7 +50,7 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
         {
             throw new ValidationException("The selected course no longer exists.", exception);
         }
-        entity.Course = await db.Courses.AsNoTracking().SingleAsync(course => course.Id == entity.CourseId, cancellationToken);
+        entity.Course = await db.Courses.AsNoTracking().SingleAsync(course => course.Id == entity.CourseId && course.OwnerId == entity.OwnerId, cancellationToken);
         NotifyChanged();
         return ToFrontendModel(entity);
     }
@@ -56,11 +59,12 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
     {
         ArgumentNullException.ThrowIfNull(assignment);
         var input = Normalize(assignment);
+        input.OwnerId = await GetUserIdAsync(cancellationToken);
         Validate(input);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await db.Assignments.SingleOrDefaultAsync(item => item.Id == input.Id, cancellationToken);
+        var entity = await db.Assignments.SingleOrDefaultAsync(item => item.Id == input.Id && item.OwnerId == input.OwnerId, cancellationToken);
         if (entity is null) return null;
-        await EnsureCourseExistsAsync(db, input.CourseId, cancellationToken);
+        await EnsureCourseExistsAsync(db, input.CourseId, input.OwnerId, cancellationToken);
         entity.CourseId = input.CourseId;
         entity.Title = input.Title;
         entity.Description = input.Description;
@@ -74,15 +78,16 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
         {
             throw new ValidationException("The selected course no longer exists.", exception);
         }
-        entity.Course = await db.Courses.AsNoTracking().SingleAsync(course => course.Id == entity.CourseId, cancellationToken);
+        entity.Course = await db.Courses.AsNoTracking().SingleAsync(course => course.Id == entity.CourseId && course.OwnerId == input.OwnerId, cancellationToken);
         NotifyChanged();
         return ToFrontendModel(entity);
     }
 
     public async Task<bool> DeleteAssignmentAsync(int id, CancellationToken cancellationToken = default)
     {
+        var ownerId = await GetUserIdAsync(cancellationToken);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        var entity = await db.Assignments.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var entity = await db.Assignments.SingleOrDefaultAsync(item => item.Id == id && item.OwnerId == ownerId, cancellationToken);
         if (entity is null) return false;
         db.Assignments.Remove(entity);
         await db.SaveChangesAsync(cancellationToken);
@@ -92,7 +97,7 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
 
     private static Assignment Normalize(Assignment assignment) => new()
     {
-        Id = assignment.Id, CourseId = assignment.CourseId, Title = assignment.Title?.Trim() ?? string.Empty,
+        Id = assignment.Id, OwnerId = assignment.OwnerId, CourseId = assignment.CourseId, Title = assignment.Title?.Trim() ?? string.Empty,
         Description = assignment.Description?.Trim() ?? string.Empty, DueDate = assignment.DueDate,
         Priority = assignment.Priority, Status = assignment.Status, EstimatedMinutes = assignment.EstimatedMinutes,
         CompletedAt = assignment.CompletedAt
@@ -100,7 +105,7 @@ public sealed class EfAssignmentService(IDbContextFactory<AppDbContext> factory,
 
     private static Assignment ToFrontendModel(Assignment assignment) => new()
     {
-        Id = assignment.Id, CourseId = assignment.CourseId, CourseName = assignment.Course?.Code ?? assignment.CourseName,
+        Id = assignment.Id, OwnerId = assignment.OwnerId, CourseId = assignment.CourseId, CourseName = assignment.Course?.Code ?? assignment.CourseName,
         Title = assignment.Title, Description = assignment.Description, DueDate = assignment.DueDate,
         Priority = assignment.Priority, Status = assignment.Status, EstimatedMinutes = assignment.EstimatedMinutes,
         CompletedAt = assignment.CompletedAt

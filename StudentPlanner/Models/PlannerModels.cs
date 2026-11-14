@@ -21,6 +21,7 @@ public sealed class Student
 public sealed class Course
 {
     public int Id { get; set; }
+    public string? OwnerId { get; set; }
     [Required, StringLength(100, MinimumLength = 3)] public string Name { get; set; } = "";
     [Required, StringLength(15, MinimumLength = 2)] public string Code { get; set; } = "";
     [Required, StringLength(100)] public string Instructor { get; set; } = "";
@@ -38,6 +39,7 @@ public sealed class Course
 public sealed class Assignment
 {
     public int Id { get; set; }
+    public string? OwnerId { get; set; }
     [Range(1, int.MaxValue)] public int CourseId { get; set; }
     [Required, StringLength(100, MinimumLength = 3)] public string Title { get; set; } = "";
     [StringLength(500)] public string Description { get; set; } = "";
@@ -57,6 +59,7 @@ public sealed class Assignment
 public sealed class Grade : IValidatableObject
 {
     public int Id { get; set; }
+    public string? OwnerId { get; set; }
     [Range(1, int.MaxValue)] public int CourseId { get; set; }
     [Required, StringLength(100, MinimumLength = 2)] public string Title { get; set; } = "";
     [Range(typeof(decimal), "0", "100")] public decimal Score { get; set; }
@@ -77,6 +80,7 @@ public sealed class Grade : IValidatableObject
 public sealed class ScheduleEvent : IValidatableObject
 {
     public int Id { get; set; }
+    public string? OwnerId { get; set; }
     public int? CourseId { get; set; }
     [Required, StringLength(100, MinimumLength = 3)] public string Title { get; set; } = "";
     [StringLength(500)] public string Description { get; set; } = "";
@@ -104,17 +108,36 @@ public sealed class NotificationPreferences
 
 public sealed class StudentSettings
 {
-    [Required, StringLength(100, MinimumLength = 2)] public string FullName { get; set; } = "Nurbolat Otep";
+    [Required, StringLength(100, MinimumLength = 2)] public string FullName { get; set; } = "Student";
     public string StudentId { get; set; } = "IT-2508";
     public string Program { get; set; } = "Computer Science";
-    [Required, EmailAddress] public string Email { get; set; } = "student@astanait.edu.kz";
+    [Required, EmailAddress] public string Email { get; set; } = "student@example.invalid";
     public ThemePreference Theme { get; set; } = ThemePreference.Dark;
     public AppLanguage Language { get; set; } = AppLanguage.English;
     public string TimeZone { get; set; } = "Asia/Almaty";
     public string Semester { get; set; } = "2nd Semester";
     public string AcademicYear { get; set; } = "2026-2027";
     public GpaScale GpaScale { get; set; } = GpaScale.FourPoint;
+    [Range(30, 720)] public int DailyStudyCapacityMinutes { get; set; } = 120;
     public NotificationPreferences NotificationPreferences { get; set; } = new();
+}
+
+public sealed class UserPlannerSettings
+{
+    [Key, StringLength(450)] public string UserId { get; set; } = string.Empty;
+    public string StudentId { get; set; } = "";
+    public string Program { get; set; } = "";
+    public ThemePreference Theme { get; set; } = ThemePreference.Dark;
+    public AppLanguage Language { get; set; } = AppLanguage.English;
+    public string TimeZone { get; set; } = "Asia/Almaty";
+    public string Semester { get; set; } = "";
+    public string AcademicYear { get; set; } = "";
+    public GpaScale GpaScale { get; set; } = GpaScale.FourPoint;
+    public bool AssignmentReminders { get; set; } = true;
+    public bool ExamReminders { get; set; } = true;
+    public bool DeadlineAlerts { get; set; } = true;
+    public bool WeeklySummary { get; set; }
+    [Range(30, 720)] public int DailyStudyCapacityMinutes { get; set; } = 120;
 }
 
 public sealed record DashboardSnapshot(int CourseCount, int AssignmentCount, int CompletedCount,
@@ -142,3 +165,24 @@ public static class GpaCalculator
         return courseResults.Sum(x => ConvertPercentage(x.Score / x.Weight, scale) * x.Credits) / totalCredits;
     }
 }
+
+public enum FocusSessionType { Focus, ShortBreak, LongBreak }
+public enum FocusSessionStatus { Completed, Stopped, Interrupted }
+
+public sealed class FocusSession
+{
+    public int Id { get; set; }
+    [Required, StringLength(450)] public string OwnerId { get; set; } = string.Empty;
+    public int? AssignmentId { get; set; }
+    public DateTimeOffset StartTime { get; set; }
+    public DateTimeOffset? EndTime { get; set; }
+    [Range(0, 86400)] public int ActualDurationSeconds { get; set; }
+    public FocusSessionType Type { get; set; } = FocusSessionType.Focus;
+    public FocusSessionStatus Status { get; set; } = FocusSessionStatus.Interrupted;
+    public Assignment? Assignment { get; set; }
+}
+
+public sealed record FocusSessionSummary(int Id, int? AssignmentId, string AssignmentTitle, string CourseCode,
+    DateTimeOffset StartTime, DateTimeOffset? EndTime, int ActualDurationSeconds, FocusSessionType Type, FocusSessionStatus Status);
+public sealed record FocusStatistics(int TodaySeconds, int WeekSeconds, int CompletedSessions, int AverageSessionSeconds,
+    IReadOnlyList<FocusSessionSummary> RecentSessions);

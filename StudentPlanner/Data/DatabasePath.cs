@@ -19,10 +19,10 @@ public static class DatabasePath
         return fullPath;
     }
 
-    public static string CreateConnectionString(string? configuredPath) => new SqliteConnectionStringBuilder
+    public static string CreateConnectionString(string? configuredPath, bool pooling = true) => new SqliteConnectionStringBuilder
     {
         DataSource = Resolve(configuredPath),
         ForeignKeys = true,
-        Pooling = true
+        Pooling = pooling
     }.ToString();
 }

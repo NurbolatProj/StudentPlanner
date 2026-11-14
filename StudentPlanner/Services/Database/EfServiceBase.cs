@@ -4,13 +4,16 @@ using Microsoft.Data.Sqlite;
 using System.ComponentModel.DataAnnotations;
 using StudentPlanner.Data;
 using StudentPlanner.Models;
+using StudentPlanner.Services.Interfaces;
 
 namespace StudentPlanner.Services.Database;
 
-public abstract class EfServiceBase<TService>(IDbContextFactory<AppDbContext> contextFactory, ILogger<TService> logger)
+public abstract class EfServiceBase<TService>(IDbContextFactory<AppDbContext> contextFactory, ILogger<TService> logger, ICurrentUserService currentUser)
 {
     protected IDbContextFactory<AppDbContext> ContextFactory { get; } = contextFactory;
     protected ILogger<TService> Logger { get; } = logger;
+    protected ICurrentUserService CurrentUser { get; } = currentUser;
+    protected Task<string> GetUserIdAsync(CancellationToken cancellationToken = default) => CurrentUser.GetRequiredUserIdAsync(cancellationToken);
     public event Action? Changed;
 
     protected void NotifyChanged()
@@ -32,9 +35,9 @@ public abstract class EfServiceBase<TService>(IDbContextFactory<AppDbContext> co
             throw new ValidationException("Select a valid event type.");
     }
 
-    protected static async Task EnsureCourseExistsAsync(AppDbContext db, int? courseId, CancellationToken cancellationToken)
+    protected static async Task EnsureCourseExistsAsync(AppDbContext db, int? courseId, string ownerId, CancellationToken cancellationToken)
     {
-        if (courseId is int id && !await db.Courses.AsNoTracking().AnyAsync(course => course.Id == id, cancellationToken))
+        if (courseId is int id && !await db.Courses.AsNoTracking().AnyAsync(course => course.Id == id && course.OwnerId == ownerId, cancellationToken))
             throw new ValidationException("The selected course no longer exists.");
     }
 

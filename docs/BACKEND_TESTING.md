@@ -6,6 +6,10 @@ Most integration tests use Microsoft.Data.Sqlite with `Data Source=:memory:` and
 
 Coverage includes:
 
+- HTTP registration, Identity password hashing, duplicate email and weak password rejection, cookie sign-in/out, antiforgery, and anonymous dashboard redirection.
+- User A/B isolation for courses, assignments, grades, events, dashboard, and cross-user course references.
+- Account-specific settings persistence and rejection of unauthenticated current-user access.
+- Migration from the pre-Identity schema preserves legacy courses, assignments, grades, and events as unowned and invisible to new accounts.
 - Initial migration and records loaded from a fresh context.
 - File-backed records survive creating fresh context factories and service instances; migrations are safe to apply again.
 - SQLite foreign-key enforcement and invalid course relationships.
@@ -27,3 +31,6 @@ dotnet test StudentPlanner.slnx
 ```
 
 Current verification outcomes must be recorded in `docs/STUDENT1_REPORT.md`; do not infer results from a build alone.
+
+## Academic feature tests
+`StudentPlanner.Tests/Features/WorkloadPlannerTests.cs` covers deadline grouping, priority ordering, deterministic allocation, scheduled capacity, overload and empty-input behavior. `FocusSessionServiceTests.cs` uses a disposable temporary SQLite file to verify persisted measured duration, pause/resume behavior, authenticated-user isolation, and rejection of another user's assignment. Do not point these tests at a developer or production database.

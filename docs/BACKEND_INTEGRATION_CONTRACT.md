@@ -10,6 +10,8 @@ Definitions and validation attributes are in `StudentPlanner/Models/PlannerModel
 - `Grade`: integer `Id`, required `CourseId`, `Title`, `Score`, `MaxScore`, `Weight`, and `Date`.
 - `ScheduleEvent`: integer `Id`, nullable `CourseId`, `Title`, `Description`, `StartTime`, `EndTime`, `Location`, and `ScheduleEventType`.
 - `StudentSettings`: profile, `ThemePreference`, English-only `AppLanguage`, time zone, semester, academic year, `GpaScale`, and notification preferences.
+- `ApplicationUser`: ASP.NET Core Identity account with server-validated full name; credentials are stored only as Identity password hashes.
+- Academic entities carry nullable `OwnerId` only for pre-authentication legacy rows. Application service methods derive ownership from `ICurrentUserService`, never from UI-supplied owner IDs.
 
 Dates and times continue to use the shared `DateTime` local wall-clock contract and are stored as SQLite date/time values. Agree on UTC storage and user time-zone conversion before changing this contract. IDs are database-generated positive integers and are durable across restarts.
 
@@ -40,4 +42,4 @@ Assignments and grades reference `CourseId`; schedule events may have no course.
 
 ## Service replacement
 
-`Program.cs` registers EF Core SQLite implementations and applies migrations at startup by default. Configure `Database:Path` to override the default `%LOCALAPPDATA%/StudentPlanner/studentplanner.db` path. Development sample data is inserted only into an entirely empty database. Browser preferences remain in local storage; no second settings store is introduced. Do not make Razor pages depend on `DbContext`. Backend validation remains authoritative even when frontend forms validate the same fields.
+`Program.cs` registers ASP.NET Core Identity and EF Core SQLite implementations and applies migrations at startup by default. Configure `Database:Path` to override the default `%LOCALAPPDATA%/StudentPlanner/studentplanner.db` path. Development sample data is inserted only into an entirely empty database and remains unowned. `IdentitySettingsService` stores preferences per account and reads profile name/email from Identity. Login, registration, and logout use static HTTP form posts so cookies are issued and cleared outside an established interactive circuit. Backend validation and ownership checks remain authoritative even when frontend forms validate the same fields.

@@ -7,22 +7,24 @@ using StudentPlanner.Services.Interfaces;
 
 namespace StudentPlanner.Services.Database;
 
-public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILogger<EfCourseService> logger)
-    : EfServiceBase<EfCourseService>(factory, logger), ICourseService
+public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILogger<EfCourseService> logger, ICurrentUserService currentUser)
+    : EfServiceBase<EfCourseService>(factory, logger, currentUser), ICourseService
 {
     public async Task<IReadOnlyList<Course>> GetCoursesAsync(CancellationToken cancellationToken = default)
     {
+        var ownerId = await GetUserIdAsync(cancellationToken);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        return await db.Courses.AsNoTracking().OrderBy(course => course.Name).ToListAsync(cancellationToken);
+        return await db.Courses.AsNoTracking().Where(course => course.OwnerId == ownerId).OrderBy(course => course.Name).ToListAsync(cancellationToken);
     }
 
     public async Task<Course> CreateCourseAsync(Course course, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(course);
         var entity = Normalize(course);
+        entity.OwnerId = await GetUserIdAsync(cancellationToken);
         Validate(entity);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        if (await db.Courses.AnyAsync(item => item.Code == entity.Code, cancellationToken))
+        if (await db.Courses.AnyAsync(item => item.OwnerId == entity.OwnerId && item.Code == entity.Code, cancellationToken))
             throw new ValidationException("A course with this code already exists.");
 
         db.Courses.Add(entity);
@@ -39,11 +41,12 @@ public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILo
     {
         ArgumentNullException.ThrowIfNull(course);
         var entity = Normalize(course);
+        entity.OwnerId = await GetUserIdAsync(cancellationToken);
         Validate(entity);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
-        var existing = await db.Courses.SingleOrDefaultAsync(item => item.Id == entity.Id, cancellationToken);
+        var existing = await db.Courses.SingleOrDefaultAsync(item => item.Id == entity.Id && item.OwnerId == entity.OwnerId, cancellationToken);
         if (existing is null) return null;
-        if (await db.Courses.AnyAsync(item => item.Id != entity.Id && item.Code == entity.Code, cancellationToken))
+        if (await db.Courses.AnyAsync(item => item.OwnerId == entity.OwnerId && item.Id != entity.Id && item.Code == entity.Code, cancellationToken))
             throw new ValidationException("A course with this code already exists.");
 
         db.Entry(existing).CurrentValues.SetValues(entity);
@@ -58,14 +61,18 @@ public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILo
 
     public async Task<bool> DeleteCourseAsync(int id, CancellationToken cancellationToken = default)
     {
+        var ownerId = await GetUserIdAsync(cancellationToken);
         await using var db = await ContextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var existing = await db.Courses.SingleOrDefaultAsync(course => course.Id == id, cancellationToken);
+        var existing = await db.Courses.SingleOrDefaultAsync(course => course.Id == id && course.OwnerId == ownerId, cancellationToken);
         if (existing is null) return false;
 
-        if (await db.Assignments.AnyAsync(assignment => assignment.CourseId == id, cancellationToken)
-            || await db.Grades.AnyAsync(grade => grade.CourseId == id, cancellationToken))
+        if (await db.Assignments.AnyAsync(assignment => assignment.CourseId == id && assignment.OwnerId == ownerId, cancellationToken)
+            || await db.Grades.AnyAsync(grade => grade.CourseId == id && grade.OwnerId == ownerId, cancellationToken))
             throw new ValidationException("A course cannot be deleted while it has assignments or grades. Remove or reassign them first.");
+
+        var linkedEvents = await db.ScheduleEvents.Where(item => item.CourseId == id && item.OwnerId == ownerId).ToListAsync(cancellationToken);
+        foreach (var item in linkedEvents) item.CourseId = null;
 
         db.Courses.Remove(existing);
         try { await db.SaveChangesAsync(cancellationToken); }
@@ -81,6 +88,7 @@ public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILo
     private static Course Normalize(Course course) => new()
     {
         Id = course.Id,
+        OwnerId = course.OwnerId,
         Name = course.Name?.Trim() ?? string.Empty,
         Code = course.Code?.Trim().ToUpperInvariant() ?? string.Empty,
         Instructor = course.Instructor?.Trim() ?? string.Empty,
@@ -94,7 +102,7 @@ public sealed class EfCourseService(IDbContextFactory<AppDbContext> factory, ILo
 
     private static Course ToFrontendModel(Course course) => new()
     {
-        Id = course.Id, Name = course.Name, Code = course.Code, Instructor = course.Instructor,
+        Id = course.Id, OwnerId = course.OwnerId, Name = course.Name, Code = course.Code, Instructor = course.Instructor,
         Credits = course.Credits, Color = course.Color, IsActive = course.IsActive,
         Description = course.Description, Room = course.Room, Schedule = course.Schedule
     };

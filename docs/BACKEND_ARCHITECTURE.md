@@ -2,20 +2,22 @@
 
 ## Runtime shape
 
-The Blazor components continue to depend on the existing `I*Service` contracts. Production registrations point to EF-backed services; the mock services remain in the project for frontend-only and focused unit tests. Settings intentionally remain browser-local.
+The Blazor components continue to depend on the existing `I*Service` contracts. Production registrations point to EF-backed services; mock services remain for frontend-only tests. ASP.NET Core Identity uses the same `AppDbContext` and SQLite database. A scoped `ICurrentUserService` resolves the authenticated principal from the Blazor `AuthenticationStateProvider`; database services apply that server-derived owner ID to every query and mutation. Preferences are stored per account in SQLite.
 
 ```mermaid
 flowchart LR
-    UI[Blazor pages and components] --> Contracts[Planner service interfaces]
-    Contracts --> EF[Scoped EF service implementations]
+    UI[Authorized Blazor pages and components] --> Contracts[Planner service interfaces]
+    Auth[ASP.NET Core Identity] --> Cookie[HTTP-only auth cookie]
+    Cookie --> CurrentUser[Scoped current-user service]
+    CurrentUser --> EF[Owner-filtered EF services]
+    Contracts --> EF
     EF --> Factory[IDbContextFactory AppDbContext]
     Factory --> DB[(SQLite database)]
     EF --> Notify[Changed notifications]
     Notify --> UI
-    Dashboard[EfDashboardService] --> Factory
-    Dashboard --> Prefs[BrowserSettingsService]
+    Dashboard[Owner-filtered EfDashboardService] --> Factory
+    Prefs[Account-scoped settings service] --> Factory
     Priority[AssignmentPriorityService] --> UI
-    Prefs --> LocalStorage[(Browser local storage)]
     Migrations[EF Core migrations] --> DB
 ```
 
@@ -27,12 +29,12 @@ The configured SQLite connection enables foreign keys and pooling. The default d
 
 | Contract | Implementation | Notes |
 |---|---|---|
-| `ICourseService` | `EfCourseService` | Normalized unique course codes; restricts deletion when academic records exist |
-| `IAssignmentService` | `EfAssignmentService` | Persists by `CourseId`; display name is hydrated from the relationship |
-| `IGradeService` | `EfGradeService` | Course credits are derived from the related course for calculations |
-| `IScheduleService` | `EfScheduleService` | Nullable course; detects overlapping events |
-| `IDashboardService` | `EfDashboardService` | Reads counts, deadlines, today's events and weighted GPA from SQLite |
-| `ISettingsService` | `BrowserSettingsService` | Preserves the existing browser local-storage contract |
+| `ICourseService` | `EfCourseService` | Filters all operations by owner; course codes are unique per account |
+| `IAssignmentService` | `EfAssignmentService` | Filters by owner and verifies selected courses belong to that owner |
+| `IGradeService` | `EfGradeService` | Filters by owner and verifies the course owner |
+| `IScheduleService` | `EfScheduleService` | Filters by owner, checks owner of linked courses, detects owner-local overlaps |
+| `IDashboardService` | `EfDashboardService` | Aggregates only the signed-in account's records |
+| `ISettingsService` | `IdentitySettingsService` | Persists theme, GPA scale, profile preferences, and notifications per user |
 
 `IAssignmentQueryService` and `IScheduleQueryService` add optional server-side filtering without changing the existing frontend service signatures. The priority service is stateless and pure with respect to its input.
 
@@ -47,4 +49,9 @@ Database settings use:
 
 ## Integration safety
 
-`CourseName`, assignment completion convenience state, grade percentage/credits, and calendar convenience properties are excluded from persistence. Relationships persist through `CourseId`; navigation properties are optional and are not annotated as required. `StudentSettings` is not duplicated in SQLite.
+`CourseName`, assignment completion convenience state, grade percentage/credits, and calendar convenience properties are excluded from persistence. Relationships persist through `CourseId`; navigation properties are optional and are not annotated as required. Profile identity lives in Identity; account preferences are persisted separately in `UserPlannerSettings`.
+
+Identity-owned records use nullable `OwnerId` to preserve the old database during migration. Application-created records always receive a server-resolved owner. Unowned legacy rows are excluded from all authenticated service queries. See `AUTHENTICATION_AND_SECURITY.md` for the deliberate legacy-data boundary and authentication flow.
+
+## Focus and planning feature boundaries
+The Focus Lab component delegates persistence and account scoping to `IFocusSessionService`; its scoped implementation owns the monotonic stopwatch state and computes durations on the server. Assignment IDs are checked against the current user before session creation. Insights use a separate owner-filtered query service and a pure deterministic workload planner, keeping UI rendering independent of forecasting rules.

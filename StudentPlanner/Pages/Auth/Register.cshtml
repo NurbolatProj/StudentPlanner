@@ -1,0 +1,11 @@
+@page "/register"
+@model StudentPlanner.Pages.Auth.RegisterModel
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Create account | StudentPlanner</title><link rel="stylesheet" href="/app.css"/><link rel="stylesheet" href="/auth.css"/></head>
+<body class="auth-page"><main class="auth-card"><a class="auth-brand" href="/">Student<span>Planner</span></a><h1>Create your account</h1><p>Your academic records will be private to your account.</p>
+<form method="post" asp-page="/Auth/Register" class="auth-form"><div asp-validation-summary="ModelOnly" class="auth-error" role="alert"></div>
+<label asp-for="Input.FullName">Full name</label><input asp-for="Input.FullName" autocomplete="name"/><span asp-validation-for="Input.FullName" class="auth-error"></span>
+<label asp-for="Input.Email">Email</label><input asp-for="Input.Email" autocomplete="email"/><span asp-validation-for="Input.Email" class="auth-error"></span>
+<label asp-for="Input.Password">Password</label><input asp-for="Input.Password" autocomplete="new-password"/><span class="auth-hint">At least 10 characters with upper/lowercase, a number, and a symbol.</span><span asp-validation-for="Input.Password" class="auth-error"></span>
+<label asp-for="Input.ConfirmPassword">Confirm password</label><input asp-for="Input.ConfirmPassword" autocomplete="new-password"/><span asp-validation-for="Input.ConfirmPassword" class="auth-error"></span>
+<button type="submit">Create account</button></form><p class="auth-footer">Already registered? <a href="/login">Sign in</a></p></main></body></html>

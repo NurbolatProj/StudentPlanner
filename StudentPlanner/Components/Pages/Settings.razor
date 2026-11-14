@@ -1,4 +1,5 @@
-﻿@page "/settings"
+@page "/settings"
+@attribute [Authorize]
 @using System.ComponentModel.DataAnnotations
 @implements IDisposable
 @using StudentPlanner.Components.Layout
@@ -41,13 +42,15 @@
 
             <div class="form-group">
                 <label>@ST("full_name")</label>
-                <input @bind="fullName" />
+                <input @bind="fullName" readonly aria-describedby="profile-link-hint" />
             </div>
 
             <div class="form-group">
                 <label>@ST("email")</label>
-                <input type="email" @bind="email" aria-describedby="email-validation" />
+                <input type="email" @bind="email" readonly aria-describedby="email-validation" />
             </div>
+
+            <small id="profile-link-hint">Update your name on the <a href="/account">Account page</a>.</small>
 
             <div id="email-validation" class="validation-message" role="alert">@emailError</div>
             <div class="form-group">
@@ -151,6 +154,10 @@
             </div>
         </section>
 
+        <section class="settings-card study-capacity-card">
+            <div class="card-heading"><div><h2>Study planning</h2><p>Set the daily study time used by Study Insights.</p></div><span class="card-icon" aria-hidden="true">◷</span></div>
+            <div class="form-group"><label for="daily-study-capacity">Daily study capacity (minutes)</label><input id="daily-study-capacity" type="number" min="30" max="720" step="15" @bind="dailyStudyCapacityMinutes" /><small>30–720 minutes per day, before scheduled classes and events.</small></div>
+        </section>
         <section class="settings-card">
             <div class="card-heading">
                 <div>
@@ -265,8 +272,8 @@
     [Inject] private ISettingsInitializer SettingsInitializer { get; set; } = default!;
     [Inject] private ILogger<Settings> Logger { get; set; } = default!;
 
-    private string fullName = "Nurbolat Otep";
-    private string email = "student@astanait.edu.kz";
+    private string fullName = "Student";
+    private string email = "";
     private string studentId = "IT-2508";
     private string program = "Computer Science";
 
@@ -282,6 +289,7 @@
     private bool examNotifications = true;
     private bool deadlineNotifications = true;
     private bool weeklySummary;
+    private int dailyStudyCapacityMinutes = 120;
 
     private string message = "";
     private string emailError = "";
@@ -295,7 +303,7 @@
         fullName=settings.FullName; email=settings.Email; theme=settings.Theme.ToString(); language="English";
         timeZone=settings.TimeZone; semester=settings.Semester; academicYear=settings.AcademicYear; gpaScale=((int)settings.GpaScale).ToString("0.0");
         assignmentNotifications=settings.NotificationPreferences.AssignmentReminders; examNotifications=settings.NotificationPreferences.ExamReminders;
-        deadlineNotifications=settings.NotificationPreferences.DeadlineAlerts; weeklySummary=settings.NotificationPreferences.WeeklySummary;
+        deadlineNotifications=settings.NotificationPreferences.DeadlineAlerts; weeklySummary=settings.NotificationPreferences.WeeklySummary; dailyStudyCapacityMinutes=settings.DailyStudyCapacityMinutes;
         studentId=settings.StudentId; program=settings.Program;
         Layout?.SetTheme(theme); StateHasChanged();
     }
@@ -321,26 +329,20 @@
     }
 
     private async Task SaveSettings() {
-        var student = new Student { FullName = fullName, Email = email };
-        var results = new List<ValidationResult>();
-        if (!Validator.TryValidateObject(student, new ValidationContext(student), results, true)) {
-            emailError = results.FirstOrDefault(r => r.MemberNames.Contains(nameof(Student.Email)))?.ErrorMessage ?? "Please enter a valid email address.";
-            message = ST("validation_error");
-            return;
-        }
         if (!decimal.TryParse(gpaScale, out var scaleValue) || !Enum.IsDefined(typeof(GpaScale), (int)scaleValue)) {
             message = "Select a supported GPA scale."; return;
         }
         emailError = "";
         var settings = new StudentSettings { FullName=fullName, StudentId=studentId, Program=program, Email=email, Theme=Enum.Parse<ThemePreference>(theme), Language=AppLanguage.English,
             TimeZone=timeZone, Semester=semester, AcademicYear=academicYear, GpaScale=(GpaScale)(int)scaleValue,
-            NotificationPreferences=new(){AssignmentReminders=assignmentNotifications,ExamReminders=examNotifications,DeadlineAlerts=deadlineNotifications,WeeklySummary=weeklySummary} };
-        try { await SettingsService.SaveSettingsAsync(settings); ApplyTheme(); ApplyLanguage(); message="Settings saved in this browser."; }
-        catch (Exception ex) { Logger.LogError(ex, "Settings could not be saved."); message="Settings could not be saved in this browser."; }
+            NotificationPreferences=new(){AssignmentReminders=assignmentNotifications,ExamReminders=examNotifications,DeadlineAlerts=deadlineNotifications,WeeklySummary=weeklySummary}, DailyStudyCapacityMinutes=dailyStudyCapacityMinutes };
+        try { await SettingsService.SaveSettingsAsync(settings); ApplyTheme(); ApplyLanguage(); message="Settings saved to your account."; }
+        catch (Exception ex) { Logger.LogError(ex, "Settings could not be saved."); message="Settings could not be saved to your account."; }
     }
     private async Task ResetSettings() {
-        fullName = "Nurbolat Otep";
-        email = "student@astanait.edu.kz";
+        var account = await SettingsService.GetSettingsAsync();
+        fullName = account.FullName;
+        email = account.Email;
         studentId = "IT-2508";
         program = "Computer Science";
 
@@ -356,6 +358,7 @@
         examNotifications = true;
         deadlineNotifications = true;
         weeklySummary = false;
+        dailyStudyCapacityMinutes = 120;
 
         ApplyTheme();
         ApplyLanguage();

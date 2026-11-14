@@ -1,4 +1,5 @@
 @page "/"
+@attribute [Authorize]
 @implements IDisposable
 @using System.Linq
 
@@ -12,7 +13,7 @@
     <div class="welcome-section">
         <div>
             <span class="welcome-label">STUDENT OVERVIEW</span>
-            <h1>Welcome back, Nurbolat! 👋</h1>
+            <h1>Welcome back, @currentSettings.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()! 👋</h1>
             <p>Here's what's happening with your studies today.</p>
         </div>
 

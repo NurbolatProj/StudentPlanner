@@ -1,0 +1,75 @@
+@page "/account"
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
+@inject IAccountProfileNotifier ProfileNotifier
+@inject ILogger<Account> Logger
+
+<PageTitle>Account | StudentPlanner</PageTitle>
+<section class="account-page">
+    <div class="page-heading"><h1>Account</h1><p>Manage your StudentPlanner profile.</p></div>
+    <EditForm Model="profile" OnValidSubmit="SaveProfileAsync" FormName="account-profile" class="profile-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="profile-validation-summary" />
+        <div class="profile-card">
+            <div class="profile-avatar" aria-label="Profile initials">@Initials(profile.FullName)</div>
+            <label for="account-name">Full name</label>
+            <InputText id="account-name" @bind-Value="profile.FullName" autocomplete="name" />
+            <ValidationMessage For="() => profile.FullName" />
+            <label for="account-email">Email</label>
+            <input id="account-email" class="readonly-field" value="@email" readonly aria-readonly="true" autocomplete="email" />
+            <small>Email changes require a separate verified flow.</small>
+            @if (!string.IsNullOrWhiteSpace(message)) { <p role="status">@message</p> }
+            <button type="submit" class="save-button" disabled="@saving">@(saving ? "Saving…" : "Save profile")</button>
+        </div>
+    </EditForm>
+</section>
+
+@code {
+    private ProfileModel profile = new();
+    private string email = string.Empty;
+    private string message = string.Empty;
+    private bool saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var user = await UserManager.GetUserAsync(principal);
+        if (user is null) return;
+        email = user.Email ?? string.Empty;
+        profile.FullName = user.FullName;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (saving) return;
+        saving = true;
+        message = string.Empty;
+        try
+        {
+            var principal = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            var user = await UserManager.GetUserAsync(principal);
+            if (user is null) { message = "Your account could not be loaded. Sign in again."; return; }
+            user.FullName = profile.FullName.Trim();
+            var result = await UserManager.UpdateAsync(user);
+            message = result.Succeeded ? "Profile saved." : string.Join(" ", result.Errors.Select(error => error.Description));
+            if (result.Succeeded) ProfileNotifier.NotifyChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Account profile update failed.");
+            message = "Profile could not be saved. Please try again.";
+        }
+        finally { saving = false; }
+    }
+
+    private static string Initials(string? value) => string.Join("", (value ?? "Student")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Take(2).Select(part => char.ToUpperInvariant(part[0])));
+
+    private sealed class ProfileModel
+    {
+        [Required, StringLength(100, MinimumLength = 2)] public string FullName { get; set; } = string.Empty;
+    }
+}

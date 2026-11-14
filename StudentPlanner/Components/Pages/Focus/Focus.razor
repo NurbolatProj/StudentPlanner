@@ -1,0 +1,101 @@
+@page "/focus"
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject IFocusSessionService Sessions
+@inject IAssignmentService AssignmentService
+@inject ILogger<Focus> Logger
+
+<PageTitle>Focus Lab | StudentPlanner</PageTitle>
+<div class="focus-page">
+    <header class="focus-heading"><div><span class="page-eyebrow">STUDY SESSIONS</span><h1>Focus Lab</h1><p>Protect a block of time for your academic work.</p></div><div class="cycle-count">Cycle @((cycles % Math.Clamp(longBreakEvery, 2, 8)) + 1) of @Math.Clamp(longBreakEvery, 2, 8)</div></header>
+    @if (!string.IsNullOrWhiteSpace(error)) { <div class="focus-message" role="alert">@error</div> }
+    <div class="focus-layout">
+        <section class="focus-timer-card" aria-label="Study timer">
+            <div class="focus-mode-row">
+                <button class="mode-button @(type == FocusSessionType.Focus ? "selected" : "")" @onclick="() => SelectType(FocusSessionType.Focus)" disabled="@running">Focus</button>
+                <button class="mode-button @(type == FocusSessionType.ShortBreak ? "selected" : "")" @onclick="() => SelectType(FocusSessionType.ShortBreak)" disabled="@running">Short break</button>
+                <button class="mode-button @(type == FocusSessionType.LongBreak ? "selected" : "")" @onclick="() => SelectType(FocusSessionType.LongBreak)" disabled="@running">Long break</button>
+            </div>
+            <div class="timer-face" aria-live="off"><span>@TimeRemaining</span><small>@(type == FocusSessionType.Focus ? "FOCUS TIME" : "BREAK TIME")</small></div>
+            <div class="timer-settings"><div class="duration-control"><label for="focus-minutes">Duration</label><input id="focus-minutes" type="number" min="1" max="240" @bind="minutes" disabled="@running" /><span>minutes</span></div><div class="duration-control"><label for="long-break-cycle">Long break every</label><input id="long-break-cycle" type="number" min="2" max="8" @bind="longBreakEvery" disabled="@running" /><span>focus cycles</span></div></div>
+            <div class="timer-actions">
+                @if (!running) { <button class="focus-primary" @onclick="StartAsync">@(paused ? "Resume session" : "Start focus")</button> }
+                else { <button class="focus-primary" @onclick="PauseAsync">Pause</button> }
+                @if (running || paused) { <button class="focus-secondary" @onclick="StopAsync">Stop</button> }
+                <button class="focus-secondary" @onclick="ResetAsync">Reset</button>
+            </div>
+            <div class="session-context">
+                <label for="focus-assignment">Link to an assignment <span>(optional)</span></label>
+                <select id="focus-assignment" @bind="assignmentId" disabled="@running">
+                    <option value="">Independent study</option>
+                    @foreach (var assignment in assignments.Where(a => a.Status != AssignmentStatus.Completed)) { <option value="@assignment.Id">@assignment.Title · @assignment.CourseName · @assignment.Priority</option> }
+                </select>
+                @if (selectedAssignment is not null) { <p>@selectedAssignment.Title <span>· @selectedAssignment.CourseName · @selectedAssignment.Priority priority · @minutes min</span></p> }
+            </div>
+        </section>
+        <aside class="focus-aside">
+            <section class="focus-stats"><h2>Your focus</h2><div class="focus-stat-row"><span>Today</span><strong>@FormatDuration(stats.TodaySeconds)</strong></div><div class="focus-stat-row"><span>This week</span><strong>@FormatDuration(stats.WeekSeconds)</strong></div><div class="focus-stat-row"><span>Completed sessions</span><strong>@stats.CompletedSessions</strong></div><div class="focus-stat-row"><span>Average session</span><strong>@FormatDuration(stats.AverageSessionSeconds)</strong></div></section>
+            <section class="focus-history"><h2>Recent sessions</h2>
+                @if (stats.RecentSessions.Count == 0) { <p class="focus-empty">Your completed focus sessions will appear here.</p> }
+                else { @foreach (var session in stats.RecentSessions) { <div class="history-row"><span class="history-mark" aria-hidden="true"></span><div><strong>@session.AssignmentTitle</strong><small>@session.StartTime.ToLocalTime().ToString("ddd, MMM d · h:mm tt") · @session.Status</small></div><b>@FormatDuration(session.ActualDurationSeconds)</b></div> } }
+            </section>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<Assignment> assignments = [];
+    private FocusStatistics stats = new(0,0,0,0,[]);
+    private int? assignmentId;
+    private int minutes = 25;
+    private int elapsed;
+    private int cycles;
+    private int longBreakEvery = 4;
+    private FocusSessionType type = FocusSessionType.Focus;
+    private bool running;
+    private bool paused;
+    private string error = string.Empty;
+    private CancellationTokenSource? timerCancellation;
+    private Task? timerTask;
+    private Assignment? selectedAssignment => assignments.FirstOrDefault(a => a.Id == assignmentId);
+    private string TimeRemaining { get { var sec=Math.Max(0,minutes*60-elapsed); return $"{sec/60:00}:{sec%60:00}"; } }
+
+    protected override async Task OnInitializedAsync() { assignments=await AssignmentService.GetAssignmentsAsync(); await RefreshStatsAsync(); }
+    private void SelectType(FocusSessionType selected) { type=selected; minutes=selected switch { FocusSessionType.Focus=>25, FocusSessionType.ShortBreak=>5, _=>15 }; elapsed=0; paused=false; }
+    private async Task StartAsync()
+    {
+        error=string.Empty;
+        try
+        {
+            if (paused) { await Sessions.ResumeAsync(); paused=false; running=true; StartTicker(); return; }
+            if (minutes is < 1 or > 240) { error="Choose a duration between 1 and 240 minutes."; return; }
+            await Sessions.StartAsync(assignmentId,type,minutes);
+            elapsed=0; running=true; paused=false; StartTicker();
+        }
+        catch (Exception ex) { Logger.LogWarning(ex,"Focus session could not start."); error=ex is System.ComponentModel.DataAnnotations.ValidationException ? ex.Message : "The session could not be started. Please try again."; }
+    }
+    private async Task PauseAsync() { try { await Sessions.PauseAsync(); elapsed=Sessions.GetElapsedSeconds(); running=false; paused=true; } catch (Exception ex) { error="The session could not be paused."; Logger.LogError(ex,"Pause focus session failed."); } }
+    private async Task StopAsync()
+    {
+        timerCancellation?.Cancel();
+        try { await Sessions.EndAsync(FocusSessionStatus.Stopped); } catch (Exception ex) { Logger.LogError(ex,"Stopping focus session failed."); error="Session could not be saved. Please retry."; }
+        running=false; paused=false; elapsed=0; await RefreshStatsAsync();
+    }
+    private async Task ResetAsync() { timerCancellation?.Cancel(); if (running || paused) await Sessions.EndAsync(FocusSessionStatus.Stopped); elapsed=0; paused=false; running=false; error=string.Empty; }
+    private void StartTicker() { timerCancellation?.Cancel(); timerCancellation=new(); timerTask=TickAsync(timerCancellation.Token); }
+    private async Task TickAsync(CancellationToken token)
+    {
+        try { using var timer=new PeriodicTimer(TimeSpan.FromSeconds(1)); while (await timer.WaitForNextTickAsync(token)) { elapsed=Sessions.GetElapsedSeconds(); if (elapsed>=minutes*60) { await Sessions.EndAsync(FocusSessionStatus.Completed,token); running=false; paused=false; cycles++; elapsed=0; SelectType(cycles%Math.Clamp(longBreakEvery,2,8)==0?FocusSessionType.LongBreak:FocusSessionType.ShortBreak); await RefreshStatsAsync(); break; } await InvokeAsync(StateHasChanged); } }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Logger.LogError(ex,"Focus timer loop failed."); await InvokeAsync(()=>error="The timer stopped unexpectedly."); }
+    }
+    private async Task RefreshStatsAsync() => stats=await Sessions.GetStatisticsAsync(DateTimeOffset.Now);
+    private static string FormatDuration(int seconds) => seconds < 60 ? $"{seconds}s" : $"{seconds/3600}h {(seconds%3600)/60:00}m";
+    public async ValueTask DisposeAsync()
+    {
+        timerCancellation?.Cancel();
+        if (timerTask is not null) try { await timerTask; } catch (OperationCanceledException) { }
+        if (running || paused) try { await Sessions.EndAsync(FocusSessionStatus.Interrupted); } catch (Exception ex) { Logger.LogError(ex,"Focus session could not be marked interrupted during navigation."); }
+        timerCancellation?.Dispose();
+    }
+}

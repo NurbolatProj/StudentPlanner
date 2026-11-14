@@ -1,0 +1,5 @@
+<span class="priority-tag @Priority.ToString().ToLowerInvariant()">@Priority</span>
+
+@code {
+    [Parameter, EditorRequired] public AssignmentPriority Priority { get; set; }
+}

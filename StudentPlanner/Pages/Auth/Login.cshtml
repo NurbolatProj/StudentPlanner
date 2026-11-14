@@ -1,0 +1,10 @@
+@page "/login"
+@model StudentPlanner.Pages.Auth.LoginModel
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Sign in | StudentPlanner</title><link rel="stylesheet" href="/app.css"/><link rel="stylesheet" href="/auth.css"/></head>
+<body class="auth-page"><main class="auth-card"><a class="auth-brand" href="/">Student<span>Planner</span></a><h1>Welcome back</h1><p>Sign in to continue to your planner.</p>
+<form method="post" asp-page="/Auth/Login" class="auth-form"><input type="hidden" asp-for="Input.ReturnUrl"/><div asp-validation-summary="ModelOnly" class="auth-error" role="alert"></div>
+<label asp-for="Input.Email">Email</label><input asp-for="Input.Email" autocomplete="username"/><span asp-validation-for="Input.Email" class="auth-error"></span>
+<label asp-for="Input.Password">Password</label><input asp-for="Input.Password" autocomplete="current-password"/><span asp-validation-for="Input.Password" class="auth-error"></span>
+<label class="auth-check"><input asp-for="Input.RememberMe"/> Remember me</label><button type="submit">Sign in</button></form>
+<p class="auth-footer">New to StudentPlanner? <a href="/register">Create an account</a></p></main></body></html>

@@ -11,6 +11,8 @@
     min-width: 0;
 }
 
+.calendar-form-error { margin:0 0 16px; padding:10px 12px; border:1px solid rgba(225,92,100,.45); border-radius:8px; background:rgba(225,92,100,.1); color:#e15c64; font-size:12px; }
+
 .calendar-heading {
     display: flex;
     align-items: center;

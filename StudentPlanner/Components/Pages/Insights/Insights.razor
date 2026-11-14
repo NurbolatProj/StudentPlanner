@@ -1,0 +1,49 @@
+@page "/insights"
+@attribute [Authorize]
+@inject IStudyInsightsService InsightsService
+@inject ILogger<Insights> Logger
+
+<PageTitle>Study Insights | StudentPlanner</PageTitle>
+<div class="insights-page">
+    <header class="insights-heading"><div><span class="page-eyebrow">ACADEMIC PLANNING</span><h1>Study Insights</h1><p>A transparent estimate of upcoming workload against your study capacity.</p></div><label class="horizon-control">Forecast horizon<select @bind="horizon" @bind:after="LoadAsync"><option value="7">Next 7 days</option><option value="14">Next 14 days</option><option value="30">Next 30 days</option></select></label></header>
+    @if (!string.IsNullOrWhiteSpace(error)) { <div class="insights-message" role="alert">@error</div> }
+    @if (result is not null)
+    {
+        <section class="insight-summary" aria-label="Workload summary">
+            <article><span>Pending estimated work</span><strong>@Hours(result.PendingMinutes)</strong><small>Unfinished assignments due within @result.HorizonDays days</small></article>
+            <article><span>Placed in suggested plan</span><strong>@Hours(result.PlannedMinutes)</strong><small>@(result.DailyCapacityMinutes/60m) study hours per day · less existing events</small></article>
+            <article><span>Deadline concentration</span><strong>@result.DeadlineConcentration</strong><small>Unfinished assignments sharing the busiest due date</small></article>
+            <article class="@(result.UnplannedMinutes>0?"summary-warning":"")"><span>Unplaced workload</span><strong>@Hours(result.UnplannedMinutes)</strong><small>@(result.UnplannedMinutes>0?"Capacity is not sufficient before one or more deadlines.":"All forecast work fits within available capacity.")</small></article>
+            <article><span>Most demanding day</span><strong>@(result.MostDemandingDate?.ToString("ddd, MMM d")??"—")</strong><small>Based on existing events plus planned minutes</small></article>
+        </section>
+        <div class="insights-columns">
+            <section class="insight-card workload-card"><header><div><h2>Daily workload</h2><p>Bars compare assigned study time to capacity after calendar events.</p></div><span class="chart-key"><i></i>Planned focus</span></header>
+                <div class="workload-chart" role="img" aria-label="Daily planned study workload chart">
+                    @foreach (var day in result.Days) { var bar=Math.Min(100, day.PlannedMinutes*100/Math.Max(1,day.AvailableMinutes)); <div class="workload-day"><span class="day-label">@day.Date.ToString("ddd d")</span><div class="bar-track" aria-hidden="true"><div class="bar-fill @(day.PlannedMinutes>day.AvailableMinutes?"over-capacity":"")" style="height:@bar%"></div></div><strong>@(day.PlannedMinutes/60m).ToString("0.#")h</strong><small>@(day.AvailableMinutes/60m).ToString("0.#")h available</small></div> }
+                </div>
+                <div class="load-list">@foreach (var day in result.Days.Where(d=>d.PlannedMinutes>0||d.ScheduledMinutes>0)) { <div class="load-row"><div><strong>@day.Date.ToString("dddd, MMM d")</strong><small>@day.ScheduledMinutes min already scheduled · @day.AvailableMinutes min capacity</small></div><b>@day.PlannedMinutes min planned</b></div> }</div>
+            </section>
+            <aside class="insight-card risk-card"><h2>Planning notes</h2><p class="method-note">Recommendations prioritize earlier deadlines, then higher priority, then assignment title. Existing calendar blocks reduce available time.</p>
+                @if (result.Risks.Count==0) { <div class="insight-empty">No workload risks were detected in this horizon.</div> }
+                else { @foreach(var risk in result.Risks) { <article class="risk-item @risk.Severity"><span>@risk.Severity.ToUpperInvariant()</span><h3>@risk.Title</h3><p>@risk.Explanation</p></article> } }
+            </aside>
+        </div>
+        <section class="insight-card suggested-plan"><header><div><h2>Suggested study plan</h2><p>Work is split into available daily capacity and never placed after its due date.</p></div></header>
+            @if (result.Plan.Count==0) { <div class="insight-empty">No pending assignments with estimated work are due in this forecast.</div> }
+            else { @foreach(var task in result.Plan) { <div class="plan-row"><time datetime="@task.Date.ToString("yyyy-MM-dd")">@task.Date.ToString("ddd, MMM d")</time><strong>@task.Title</strong><span>@(task.Minutes/60m).ToString("0.#")h</span></div> } }
+        </section>
+    }
+</div>
+@code {
+    private int horizon=7;
+    private StudyInsightsResult? result;
+    private string error=string.Empty;
+    protected override Task OnInitializedAsync()=>LoadAsync();
+    private async Task LoadAsync()
+    {
+        error=string.Empty;
+        try { result=await InsightsService.GetAsync(DateTime.Today,horizon); }
+        catch(Exception ex) { Logger.LogError(ex,"Study insights could not be calculated."); error="Study insights could not be loaded. Please try again."; }
+    }
+    private static string Hours(int minutes)=>$"{minutes/60m:0.#} h";
+}

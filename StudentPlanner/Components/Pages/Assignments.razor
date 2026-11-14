@@ -1,4 +1,6 @@
-﻿@page "/assignments"
+@page "/assignments"
+@attribute [Authorize]
+@implements IDisposable
 @using System.ComponentModel.DataAnnotations
 
 <PageTitle>Assignments | StudentPlanner</PageTitle>
@@ -58,6 +60,7 @@
     <!-- ASSIGNMENTS TABLE -->
     <section class="assignment-card">
 
+        @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="settings-message" role="alert">@errorMessage</p> }
         <div class="assignment-toolbar">
             <div>
                 <h2>All Tasks</h2>
@@ -83,16 +86,18 @@
             <select class="filter-select" @bind="statusFilter">
                 <option value="All">All Statuses</option>
                 <option value="Pending">Pending</option>
-                <option value="In Progress">In Progress</option>
+                <option value="InProgress">In Progress</option>
                 <option value="Completed">Completed</option>
             </select>
 
-            <select class="filter-select" @bind="priorityFilter">
+            <select class="filter-select" @bind="priorityFilter" aria-label="Filter by priority">
                 <option value="All">All Priorities</option>
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
             </select>
+
+            <select class="filter-select" @bind="sortBy" aria-label="Sort assignments"><option value="Due">Sort by due date</option><option value="Priority">Sort by priority</option><option value="Title">Sort by title</option></select>
 
             <button class="reset-button" @onclick="ResetFilters">
                 Reset
@@ -134,7 +139,7 @@
 
                             <td>
                                 <span class="course-tag">
-                                    @assignment.Course
+                                    @assignment.CourseName
                                 </span>
                             </td>
 
@@ -145,17 +150,15 @@
                             </td>
 
                             <td>
-                                <span class="priority-tag @PriorityClass(assignment.Priority)">
-                                    @assignment.Priority
-                                </span>
+                                <PriorityBadge Priority="assignment.Priority" />
                             </td>
 
                             <td>
                                 <select class="status-select @StatusClass(assignment.Status)"
-                                        @bind="assignment.Status">
+                                        @bind="assignment.Status" @bind:after="() => PersistStatus(assignment)">
 
                                     <option value="Pending">Pending</option>
-                                    <option value="In Progress">In Progress</option>
+                                    <option value="InProgress">In Progress</option>
                                     <option value="Completed">Completed</option>
 
                                 </select>
@@ -172,7 +175,8 @@
 
                                     <button class="action-button delete-action"
                                             title="Delete assignment"
-                                            @onclick="() => DeleteAssignment(assignment.Id)">
+                                            aria-label="Delete assignment @assignment.Title"
+                                            @onclick="() => RequestDeleteAssignment(assignment.Id)">
                                         🗑
                                     </button>
 
@@ -208,11 +212,16 @@
 
 </div>
 
+@if (pendingDeleteId is not null) {
+    <ConfirmDialog Title="Delete this assignment?" Message="This action cannot be undone."
+                   ConfirmText="Delete assignment" OnConfirm="ConfirmDeleteAssignment" OnCancel="CancelDeleteAssignment" />
+}
+
 <!-- CREATE / EDIT MODAL -->
 @if (showModal) {
-    <div class="modal-overlay" @onclick="CloseModal">
+    <div class="modal-overlay" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
 
-        <div class="assignment-modal" @onclick:stopPropagation="true">
+        <div class="assignment-modal @((Layout?.isDark ?? true) ? "dark-controls" : "light-controls")" @onclick:stopPropagation="true" role="dialog" aria-modal="true" tabindex="-1">
 
             <div class="modal-heading">
 
@@ -226,15 +235,16 @@
                     <p>Enter the assignment details below.</p>
                 </div>
 
-                <button class="modal-close" @onclick="CloseModal">
+                <button class="modal-close" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                     ×
                 </button>
 
             </div>
 
-            <EditForm Model="formModel" OnValidSubmit="SaveAssignment">
+            <EditForm Model="formModel" OnValidSubmit="SaveAssignment" class="planner-form">
 
                 <DataAnnotationsValidator />
+                @if (!string.IsNullOrWhiteSpace(errorMessage)) { <div class="form-error" role="alert">@errorMessage</div> }
 
                 <div class="form-group">
                     <label>Assignment Title *</label>
@@ -257,11 +267,12 @@
                 <div class="form-group">
                     <label>Course *</label>
 
-                    <InputText @bind-Value="formModel.Course"
-                               class="form-input"
-                               placeholder="e.g. Database Management" />
+                    <InputSelect @bind-Value="formModel.CourseId" class="form-input">
+                        <option value="0">Select a course</option>
+                        @foreach (var course in courses) { <option value="@course.Id">@course.Code — @course.Name</option> }
+                    </InputSelect>
 
-                    <ValidationMessage For="@(() => formModel.Course)" />
+                    <ValidationMessage For="@(() => formModel.CourseId)" />
                 </div>
 
                 <div class="form-row">
@@ -295,7 +306,7 @@
                                  class="form-input">
 
                         <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
+                        <option value="InProgress">In Progress</option>
                         <option value="Completed">Completed</option>
 
                     </InputSelect>
@@ -305,12 +316,12 @@
 
                     <button type="button"
                             class="cancel-button"
-                            @onclick="CloseModal">
+                            @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                         Cancel
                     </button>
 
-                    <button type="submit" class="add-button">
-                        @(isEditing ? "Save Changes" : "Create Assignment")
+                    <button type="submit" class="add-button" disabled="@isSaving">
+                        @(isSaving ? "Saving…" : isEditing ? "Save Changes" : "Create Assignment")
                     </button>
 
                 </div>
@@ -323,216 +334,38 @@
 }
 
 @code {
-
-    // MODEL
-
-    public class AssignmentModel {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Assignment title is required.")]
-        [StringLength(100, MinimumLength = 3,
-            ErrorMessage = "Title must contain 3-100 characters.")]
-        public string Title { get; set; } = "";
-
-        [StringLength(500,
-            ErrorMessage = "Description cannot exceed 500 characters.")]
-        public string Description { get; set; } = "";
-
-        [Required(ErrorMessage = "Course is required.")]
-        public string Course { get; set; } = "";
-
-        public DateTime DueDate { get; set; } = DateTime.Today.AddDays(7);
-
-        public string Priority { get; set; } = "Medium";
-
-        public string Status { get; set; } = "Pending";
-    }
-
-    // MOCK DATA
-
-    private List<AssignmentModel> assignments = new()
-    {
-        new()
-        {
-            Id = 1,
-            Title = "Database Normalization",
-            Description = "Complete 1NF, 2NF and 3NF exercises.",
-            Course = "DBMS",
-            DueDate = DateTime.Today.AddDays(2),
-            Priority = "High",
-            Status = "Pending"
-        },
-
-        new()
-        {
-            Id = 2,
-            Title = "OOP Project Implementation",
-            Description = "Implement Java OOP project functionality.",
-            Course = "Programming",
-            DueDate = DateTime.Today.AddDays(4),
-            Priority = "Medium",
-            Status = "In Progress"
-        },
-
-        new()
-        {
-            Id = 3,
-            Title = "English Presentation",
-            Description = "Prepare the final English presentation.",
-            Course = "English",
-            DueDate = DateTime.Today.AddDays(6),
-            Priority = "Low",
-            Status = "Completed"
-        },
-
-        new()
-        {
-            Id = 4,
-            Title = "Algorithms Assignment",
-            Description = "Solve algorithmic programming problems.",
-            Course = "ADS",
-            DueDate = DateTime.Today.AddDays(8),
-            Priority = "High",
-            Status = "Pending"
-        },
-
-        new()
-        {
-            Id = 5,
-            Title = "Web Development Project",
-            Description = "Develop the Student Planner frontend.",
-            Course = "Web Development",
-            DueDate = DateTime.Today.AddDays(10),
-            Priority = "High",
-            Status = "In Progress"
-        }
-    };
-
-    // STATE
-
-    private string searchTerm = "";
-    private string statusFilter = "All";
-    private string priorityFilter = "All";
-
-    private bool showModal = false;
-    private bool isEditing = false;
-
+    [CascadingParameter] public MainLayout? Layout { get; set; }
+    [Inject] private IAssignmentService AssignmentService { get; set; } = default!;
+    [Inject] private ICourseService CourseService { get; set; } = default!;
+    [Inject] private ILogger<Assignments> Logger { get; set; } = default!;
+    private List<Assignment> assignments = new();
+    private List<Course> courses = new();
+    private string searchTerm = "", statusFilter = "All", priorityFilter = "All", sortBy="Due";
+    private bool showModal, isEditing, isSaving;
+    private int? pendingDeleteId;
     private int editingId;
-
-    private AssignmentModel formModel = new();
-
-    // FILTERING
-
-    private IEnumerable<AssignmentModel> FilteredAssignments =>
-        assignments.Where(a =>
-            (string.IsNullOrWhiteSpace(searchTerm) ||
-             a.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-             a.Course.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-            &&
-            (statusFilter == "All" || a.Status == statusFilter)
-            &&
-            (priorityFilter == "All" || a.Priority == priorityFilter)
-        );
-
-    // STATISTICS
-
-    private int CountStatus(string status) {
-        return assignments.Count(a => a.Status == status);
-    }
-
-    // CREATE
-
-    private void OpenCreateModal() {
-        formModel = new AssignmentModel {
-            DueDate = DateTime.Today.AddDays(7),
-            Priority = "Medium",
-            Status = "Pending"
-        };
-
-        isEditing = false;
-        showModal = true;
-    }
-
-    // EDIT
-
-    private void EditAssignment(AssignmentModel assignment) {
-        editingId = assignment.Id;
-
-        formModel = new AssignmentModel {
-            Id = assignment.Id,
-            Title = assignment.Title,
-            Description = assignment.Description,
-            Course = assignment.Course,
-            DueDate = assignment.DueDate,
-            Priority = assignment.Priority,
-            Status = assignment.Status
-        };
-
-        isEditing = true;
-        showModal = true;
-    }
-
-    // SAVE
-
-    private void SaveAssignment() {
-        if (isEditing) {
-            var existing = assignments.FirstOrDefault(
-                a => a.Id == editingId
-            );
-
-            if (existing != null) {
-                existing.Title = formModel.Title;
-                existing.Description = formModel.Description;
-                existing.Course = formModel.Course;
-                existing.DueDate = formModel.DueDate;
-                existing.Priority = formModel.Priority;
-                existing.Status = formModel.Status;
-            }
-        } else {
-            formModel.Id = assignments.Count == 0
-                ? 1
-                : assignments.Max(a => a.Id) + 1;
-
-            assignments.Add(formModel);
-        }
-
-        CloseModal();
-    }
-
-    // DELETE
-
-    private void DeleteAssignment(int id) {
-        var assignment = assignments.FirstOrDefault(
-            a => a.Id == id
-        );
-
-        if (assignment != null) {
-            assignments.Remove(assignment);
-        }
-    }
-
-    // RESET FILTERS
-
-    private void ResetFilters() {
-        searchTerm = "";
-        statusFilter = "All";
-        priorityFilter = "All";
-    }
-
-    // CLOSE MODAL
-
-    private void CloseModal() {
-        showModal = false;
-    }
-
-    // CSS CLASSES
-
-    private string PriorityClass(string priority) {
-        return priority.ToLower();
-    }
-
-    private string StatusClass(string status) {
-        return status.ToLower().Replace(" ", "-");
-    }
-
+    private Assignment formModel = new();
+    private string errorMessage = "";
+    private IEnumerable<Assignment> FilteredAssignments => (sortBy switch { "Priority"=>assignments.OrderByDescending(a=>a.Priority), "Title"=>assignments.OrderBy(a=>a.Title), _=>assignments.OrderBy(a=>a.DueDate) }).Where(a =>
+        (string.IsNullOrWhiteSpace(searchTerm) || a.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || a.CourseName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) &&
+        (statusFilter == "All" || a.Status.ToString() == statusFilter) &&
+        (priorityFilter == "All" || a.Priority.ToString() == priorityFilter));
+    protected override async Task OnInitializedAsync() { AssignmentService.Changed += OnChanged; CourseService.Changed += OnChanged; await LoadAsync(); }
+    private async Task LoadAsync() { try { assignments=(await AssignmentService.GetAssignmentsAsync()).ToList(); courses=(await CourseService.GetCoursesAsync()).ToList(); errorMessage=""; } catch (Exception ex) { Logger.LogError(ex,"Assignments could not be loaded."); errorMessage="Assignments could not be loaded. Please try again."; } }
+    private void OnChanged() => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    private int CountStatus(string status) => assignments.Count(a => a.Status.ToString() == status.Replace(" ", ""));
+    private void OpenCreateModal() { formModel=new Assignment { DueDate=DateTime.Today.AddDays(7), Priority=AssignmentPriority.Medium, Status=AssignmentStatus.Pending }; isEditing=false; showModal=true; }
+    private void EditAssignment(Assignment assignment) { editingId=assignment.Id; formModel=new Assignment { Id=assignment.Id,CourseId=assignment.CourseId,CourseName=assignment.CourseName,Title=assignment.Title,Description=assignment.Description,DueDate=assignment.DueDate,Priority=assignment.Priority,Status=assignment.Status,EstimatedMinutes=assignment.EstimatedMinutes }; isEditing=true; showModal=true; }
+    private async Task SaveAssignment() { if(isSaving)return; isSaving=true; try { formModel.CourseName=courses.FirstOrDefault(c=>c.Id==formModel.CourseId)?.Code ?? ""; if(isEditing) await AssignmentService.UpdateAssignmentAsync(formModel); else await AssignmentService.CreateAssignmentAsync(formModel); errorMessage=""; await LoadAsync(); CloseModal(); } catch (ValidationException ex) { errorMessage=ex.Message; } catch (Exception ex) { Logger.LogError(ex,"Assignment save failed for {AssignmentId}.",formModel.Id); errorMessage="The assignment could not be saved. Please try again."; } finally { isSaving=false; } }
+    private void RequestDeleteAssignment(int id) => pendingDeleteId=id;
+    private Task CancelDeleteAssignment() { pendingDeleteId=null; return Task.CompletedTask; }
+    private async Task ConfirmDeleteAssignment() { if (pendingDeleteId is not int id) return; try { var deleted=await AssignmentService.DeleteAssignmentAsync(id); pendingDeleteId=null; if(!deleted) errorMessage="This assignment is no longer available."; await LoadAsync(); } catch (Exception ex) { Logger.LogError(ex,"Assignment deletion failed for {AssignmentId}.",id); errorMessage="The assignment could not be deleted."; } }
+    private async Task StatusChanged(ChangeEventArgs e, Assignment assignment) { if(Enum.TryParse<AssignmentStatus>(e.Value?.ToString(),out var status)) { assignment.Status=status; await AssignmentService.UpdateAssignmentAsync(assignment); } }
+    private void ResetFilters() { searchTerm=""; statusFilter="All"; priorityFilter="All"; sortBy="Due"; }
+    private async Task PersistStatus(Assignment assignment){try{if(assignment.Status==AssignmentStatus.Completed&&assignment.CompletedAt is null)assignment.CompletedAt=DateTime.Now;if(assignment.Status!=AssignmentStatus.Completed)assignment.CompletedAt=null;var updated=await AssignmentService.UpdateAssignmentAsync(assignment);if(updated is null){errorMessage="This assignment is no longer available.";await LoadAsync();return;}errorMessage="";}catch(ValidationException ex){errorMessage=ex.Message;await LoadAsync();}catch(Exception ex){Logger.LogError(ex,"Assignment status update failed for {AssignmentId}.",assignment.Id);errorMessage="The assignment status could not be updated.";await LoadAsync();}}
+    private void CloseModal() => showModal=false;
+    private void HandleModalKeyDown(KeyboardEventArgs e){if(e.Key=="Escape")showModal=false;}
+    private string PriorityClass(AssignmentPriority priority) => priority.ToString().ToLowerInvariant();
+    private string StatusClass(AssignmentStatus status) => status==AssignmentStatus.InProgress ? "in-progress" : status.ToString().ToLowerInvariant();
+    public void Dispose() { AssignmentService.Changed-=OnChanged; CourseService.Changed-=OnChanged; }
 }

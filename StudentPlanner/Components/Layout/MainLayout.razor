@@ -1,48 +1,62 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ISettingsService SettingsService
+@inject ISettingsInitializer SettingsInitializer
+@inject ILogger<MainLayout> Logger
+@inject IAccountProfileNotifier ProfileNotifier
 
 <CascadingValue Value="this">
     <div class="app-shell @(isDark ? "dark" : "light")">
 
         @if (isMenuOpen) {
-            <div class="sidebar-overlay" @onclick="CloseMenu"></div>
+            <button class="sidebar-overlay" aria-label="Close navigation menu" @onclick="CloseMenu"></button>
         }
 
-        <aside class="sidebar @(isMenuOpen ? "open" : "")">
+        <aside class="sidebar @(isMenuOpen ? "open" : "")" @onkeydown="HandleSidebarKeyDown">
 
-            <div class="brand">
-                <div class="brand-icon">S</div>
+            <a class="brand" href="/" data-enhance-nav="false" aria-label="StudentPlanner dashboard">
+                <div class="brand-icon" aria-hidden="true">S</div>
                 <div>
                     <h2>Student<span>Planner</span></h2>
                     <small>@T("workspace")</small>
                 </div>
-            </div>
+            </a>
 
             <div class="sidebar-label">@T("workspace_section")</div>
 
             <nav class="navigation">
                 <NavLink href="/" Match="NavLinkMatch.All" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">▦</span>
-                    @T("dashboard")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="11" width="7" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg></span>
+                    <span class="nav-label">@T("dashboard")</span>
                 </NavLink>
 
                 <NavLink href="/calendar" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">▦</span>
-                    @T("calendar")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></span>
+                    <span class="nav-label">@T("calendar")</span>
                 </NavLink>
 
                 <NavLink href="/assignments" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">☑</span>
-                    @T("assignments")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
+                    <span class="nav-label">@T("assignments")</span>
                 </NavLink>
 
                 <NavLink href="/courses" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">▤</span>
-                    @T("courses")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v15M3 20h18M8 7h8M8 11h8M8 15h5"/></svg></span>
+                    <span class="nav-label">@T("courses")</span>
                 </NavLink>
 
+                <NavLink href="/focus" Match="NavLinkMatch.Prefix" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6M12 2v3"/></svg></span>
+                    <span class="nav-label">Focus Lab</span>
+                </NavLink>
+
+                <NavLink href="/insights" Match="NavLinkMatch.Prefix" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-4 3 3 6-7"/><path d="M16 7h4v4"/></svg></span>
+                    <span class="nav-label">Study Insights</span>
+                </NavLink>
                 <NavLink href="/grades" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">▥</span>
-                    @T("grades")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h17M8 16v-5M13 16V7M18 16v-9"/></svg></span>
+                    <span class="nav-label">@T("grades")</span>
                 </NavLink>
             </nav>
 
@@ -50,26 +64,35 @@
                 <div class="sidebar-label">@T("preferences")</div>
 
                 <NavLink href="/settings" class="nav-item" @onclick="CloseMenu">
-                    <span class="nav-icon">⚙</span>
-                    @T("settings")
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4L17 17.4a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V4a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2.9Z"/></svg></span>
+                    <span class="nav-label">@T("settings")</span>
                 </NavLink>
 
+                <NavLink href="/account" class="nav-item" @onclick="CloseMenu">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+                    <span class="nav-label">Profile</span>
+                </NavLink>
+
+                <div class="sidebar-label account-label">ACCOUNT</div>
                 <div class="user-profile">
-                    <div class="avatar">N</div>
+                    <div class="avatar">@GetInitials(settings.FullName)</div>
                     <div class="user-info">
-                        <strong>Nurbolat</strong>
-                        <small>@T("student_account")</small>
+                        <strong>@settings.FullName</strong>
+                        <small>@settings.Email</small>
                     </div>
-                    <span class="online-dot"></span>
                 </div>
+                <form method="post" action="/logout" class="logout-form">
+                    <AntiforgeryToken />
+                    <button type="submit" class="logout-button">Sign out</button>
+                </form>
             </div>
         </aside>
 
         <main class="main-area">
             <header class="topbar">
 
-                <button class="mobile-menu" @onclick="ToggleMenu">
-                    ☰
+                <button class="mobile-menu" aria-label="Toggle navigation" aria-expanded="@isMenuOpen" @onclick="ToggleMenu">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
 
                 <div class="breadcrumb">
@@ -87,7 +110,7 @@
                         @(isDark ? "☀" : "☾")
                     </button>
 
-                    <div class="header-avatar">N</div>
+                    <div class="header-avatar">@GetInitials(settings.FullName)</div>
                 </div>
             </header>
 
@@ -98,17 +121,52 @@
     </div>
 </CascadingValue>
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
 
+
+<div id="blazor-error-ui" class="@(isErrorDismissed ? "error-dismissed" : "")" role="alert" aria-live="assertive" data-nosnippet>
+    <span class="error-message">A temporary application error occurred. Reload the page to continue.</span>
+    <a href="" class="reload" aria-label="Reload Student Planner">Reload</a>
+    <button type="button" class="dismiss" aria-label="Dismiss error notice" @onclick="DismissErrorNotice">×</button>
+</div>
 @code {
     public bool isDark { get; private set; } = true;
     public string CurrentLanguage { get; private set; } = "English";
+    private StudentSettings settings = new();
 
     private bool isMenuOpen = false;
+    private bool isErrorDismissed;
+    private void DismissErrorNotice() => isErrorDismissed = true;
+
+    protected override void OnInitialized() {
+        SettingsService.Changed += OnSettingsChanged;
+        ProfileNotifier.Changed += OnSettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (!firstRender) return;
+        await SettingsInitializer.InitializeAsync();
+        await ApplySavedSettingsAsync();
+    }
+
+    private void OnSettingsChanged() => _ = InvokeAsync(async () => {
+        try {
+            await ApplySavedSettingsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex) {
+            Logger.LogError(ex, "Saved preferences could not be applied to the application shell.");
+        }
+    });
+
+    private async Task ApplySavedSettingsAsync() {
+        settings = await SettingsService.GetSettingsAsync();
+        isDark = settings.Theme == ThemePreference.Dark;
+        CurrentLanguage = "English";
+    }
+
+    private static string GetInitials(string? fullName) => string.Join("", (fullName ?? "Student")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Take(2).Select(part => char.ToUpperInvariant(part[0])));
 
     public void SetTheme(string selectedTheme) {
         isDark = selectedTheme == "Dark";
@@ -120,8 +178,18 @@
         StateHasChanged();
     }
 
-    private void ToggleTheme() {
+    private async Task ToggleTheme() {
+        var previousTheme = isDark;
         isDark = !isDark;
+        try {
+            var settings = await SettingsService.GetSettingsAsync();
+            settings.Theme = isDark ? ThemePreference.Dark : ThemePreference.Light;
+            await SettingsService.SaveSettingsAsync(settings);
+        }
+        catch (Exception ex) {
+            isDark = previousTheme;
+            Logger.LogError(ex, "Theme preference could not be saved.");
+        }
     }
 
     private void ToggleMenu() {
@@ -132,57 +200,15 @@
         isMenuOpen = false;
     }
 
-    public string T(string key) {
-        var translations = new Dictionary<string, Dictionary<string, string>> {
-            ["English"] = new() {
-                ["workspace"] = "STUDENT WORKSPACE",
-                ["workspace_section"] = "WORKSPACE",
-                ["dashboard"] = "Dashboard",
-                ["calendar"] = "Calendar",
-                ["assignments"] = "Assignments",
-                ["courses"] = "Courses",
-                ["grades"] = "Grades & Analytics",
-                ["preferences"] = "PREFERENCES",
-                ["settings"] = "Settings",
-                ["student_account"] = "Student Account",
-                ["learning_space"] = "Your learning space",
-                ["switch_theme"] = "Switch theme"
-            },
-            ["Русский"] = new() {
-                ["workspace"] = "СТУДЕНЧЕСКОЕ ПРОСТРАНСТВО",
-                ["workspace_section"] = "РАБОЧАЯ ОБЛАСТЬ",
-                ["dashboard"] = "Главная",
-                ["calendar"] = "Календарь",
-                ["assignments"] = "Задания",
-                ["courses"] = "Курсы",
-                ["grades"] = "Оценки и аналитика",
-                ["preferences"] = "НАСТРОЙКИ",
-                ["settings"] = "Настройки",
-                ["student_account"] = "Студенческий аккаунт",
-                ["learning_space"] = "Твоё учебное пространство",
-                ["switch_theme"] = "Сменить тему"
-            },
-            ["Қазақша"] = new() {
-                ["workspace"] = "СТУДЕНТТІК КЕҢІСТІК",
-                ["workspace_section"] = "ЖҰМЫС АЙМАҒЫ",
-                ["dashboard"] = "Басты бет",
-                ["calendar"] = "Күнтізбе",
-                ["assignments"] = "Тапсырмалар",
-                ["courses"] = "Курстар",
-                ["grades"] = "Бағалар мен аналитика",
-                ["preferences"] = "БАПТАУЛАР",
-                ["settings"] = "Баптаулар",
-                ["student_account"] = "Студент аккаунты",
-                ["learning_space"] = "Сіздің оқу кеңістігіңіз",
-                ["switch_theme"] = "Тақырыпты өзгерту"
-            }
-        };
+    private void HandleSidebarKeyDown(KeyboardEventArgs args) {
+        if (args.Key == "Escape") CloseMenu();
+    }
 
-        if (translations.TryGetValue(CurrentLanguage, out var language) &&
-            language.TryGetValue(key, out var translated)) {
-            return translated;
-        }
-
-        return key;
+    public string T(string key) => new Dictionary<string,string> {
+        ["workspace"]="STUDENT WORKSPACE",["workspace_section"]="WORKSPACE",["dashboard"]="Dashboard",["calendar"]="Calendar",["assignments"]="Assignments",["courses"]="Courses",["grades"]="Grades & Analytics",["preferences"]="PREFERENCES",["settings"]="Settings",["student_account"]="Student Account",["learning_space"]="Your learning space",["switch_theme"]="Switch theme"
+    }.GetValueOrDefault(key,key);
+    public void Dispose() {
+        SettingsService.Changed -= OnSettingsChanged;
+        ProfileNotifier.Changed -= OnSettingsChanged;
     }
 }

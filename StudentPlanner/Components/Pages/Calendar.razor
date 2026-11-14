@@ -1,9 +1,14 @@
-﻿@page "/calendar"
+@page "/calendar"
+@attribute [Authorize]
+@implements IDisposable
 @using System.ComponentModel.DataAnnotations
+@inject ILogger<Calendar> Logger
 
 <PageTitle>Calendar | StudentPlanner</PageTitle>
 
 <div class="calendar-page">
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage)) { <p class="settings-message" role="alert">@errorMessage</p> }
 
     <!-- HEADER -->
     <div class="calendar-heading">
@@ -184,7 +189,7 @@
 
                         <div class="event-information">
                             <strong>@item.Title</strong>
-                            <span>@item.Course</span>
+                            <span>@item.CourseName</span>
 
                             @if (!string.IsNullOrWhiteSpace(item.Description)) {
                                 <p>@item.Description</p>
@@ -201,7 +206,8 @@
 
                             <button class="event-action delete-event"
                                     title="Delete event"
-                                    @onclick="() => DeleteEvent(item.Id)">
+                                    aria-label="Delete event @item.Title"
+                                    @onclick="() => RequestDeleteEvent(item.Id)">
                                 🗑
                             </button>
 
@@ -217,11 +223,23 @@
 
 </div>
 
+<section class="selected-events-card">
+    <div class="selected-events-heading"><div><span class="page-eyebrow">ASSIGNMENT DEADLINES</span><h2>Upcoming work</h2><p>Deadlines come from your shared assignments.</p></div></div>
+    @if (!assignments.Any(a => a.Status != AssignmentStatus.Completed && a.DueDate.Date >= DateTime.Today)) { <div class="no-events"><h3>No upcoming assignment deadlines</h3></div> } else {
+        <div class="event-list">@foreach (var assignment in assignments.Where(a => a.Status != AssignmentStatus.Completed && a.DueDate.Date >= DateTime.Today).OrderBy(a => a.DueDate).Take(5)) { <div class="event-row"><div class="event-time"><strong>@assignment.DueDate.ToString("MMM dd")</strong><span>@assignment.Priority</span></div><div class="event-color-bar assignment"></div><div class="event-information"><strong>@assignment.Title</strong><span>@assignment.CourseName</span></div></div> }</div>
+    }
+</section>
+
+@if (pendingDeleteId is not null) {
+    <ConfirmDialog Title="Delete this event?" Message="This action cannot be undone."
+                   ConfirmText="Delete event" OnConfirm="ConfirmDeleteEvent" OnCancel="CancelDeleteEvent" />
+}
+
 <!-- CREATE / EDIT MODAL -->
 @if (showModal) {
-    <div class="calendar-modal-overlay" @onclick="CloseModal">
+    <div class="calendar-modal-overlay" @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
 
-        <div class="calendar-modal" @onclick:stopPropagation="true">
+        <div class="calendar-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" tabindex="-1">
 
             <div class="modal-header">
 
@@ -236,15 +254,16 @@
                 </div>
 
                 <button class="calendar-modal-close"
-                        @onclick="CloseModal">
+                        @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                     ×
                 </button>
 
             </div>
 
-            <EditForm Model="formModel" OnValidSubmit="SaveEvent">
+            <EditForm Model="formModel" OnValidSubmit="SaveEvent" class="planner-form">
 
                 <DataAnnotationsValidator />
+                @if (!string.IsNullOrWhiteSpace(errorMessage)) { <div class="calendar-form-error" role="alert">@errorMessage</div> }
 
                 <div class="calendar-form-group">
                     <label>Event Title *</label>
@@ -259,11 +278,10 @@
                 <div class="calendar-form-group">
                     <label>Course / Subject *</label>
 
-                    <InputText class="calendar-input"
-                               @bind-Value="formModel.Course"
-                               placeholder="e.g. DBMS" />
-
-                    <ValidationMessage For="@(() => formModel.Course)" />
+                    <InputSelect class="calendar-input" @bind-Value="formModel.CourseId">
+                        <option value="">Personal / no course</option>
+                        @foreach (var course in courses) { <option value="@course.Id">@course.Code — @course.Name</option> }
+                    </InputSelect>
                 </div>
 
                 <div class="calendar-form-row">
@@ -278,9 +296,12 @@
                     <div class="calendar-form-group">
                         <label>Time</label>
 
-                        <InputText class="calendar-input"
-                                   @bind-Value="formModel.Time"
-                                   type="time" />
+                        <InputDate class="calendar-input" Type="InputDateType.Time" @bind-Value="formModel.StartTime" />
+                    </div>
+
+                    <div class="calendar-form-group">
+                        <label>End Time</label>
+                        <InputDate class="calendar-input" Type="InputDateType.Time" @bind-Value="formModel.EndTime" />
                     </div>
 
                 </div>
@@ -311,13 +332,12 @@
 
                     <button type="button"
                             class="calendar-cancel-button"
-                            @onclick="CloseModal">
+                            @onclick="CloseModal" @onkeydown="HandleModalKeyDown">
                         Cancel
                     </button>
 
-                    <button type="submit"
-                            class="calendar-add-button">
-                        @(isEditing ? "Save Changes" : "Create Event")
+                    <button type="submit" class="calendar-add-button" disabled="@isSaving">
+                        @(isSaving ? "Saving…" : isEditing ? "Save Changes" : "Create Event")
                     </button>
 
                 </div>
@@ -330,277 +350,32 @@
 }
 
 @code {
-
-    // EVENT MODEL
-
-    public class CalendarEvent {
-        public int Id { get; set; }
-
-        [Required(ErrorMessage = "Event title is required.")]
-        [StringLength(100, MinimumLength = 3,
-            ErrorMessage = "Title must contain 3-100 characters.")]
-        public string Title { get; set; } = "";
-
-        [Required(ErrorMessage = "Course or subject is required.")]
-        public string Course { get; set; } = "";
-
-        public DateTime Date { get; set; } = DateTime.Today;
-
-        public string Time { get; set; } = "09:00";
-
-        public string Type { get; set; } = "Class";
-
-        [StringLength(500)]
-        public string Description { get; set; } = "";
-    }
-
-    // MOCK DATA
-
-    private List<CalendarEvent> events = new()
-    {
-        new()
-        {
-            Id = 1,
-            Title = "Database Lecture",
-            Course = "DBMS",
-            Date = DateTime.Today,
-            Time = "09:00",
-            Type = "Class",
-            Description = "Database normalization and SQL."
-        },
-
-        new()
-        {
-            Id = 2,
-            Title = "OOP Workshop",
-            Course = "Programming",
-            Date = DateTime.Today.AddDays(1),
-            Time = "11:00",
-            Type = "Class",
-            Description = "Object-oriented programming practice."
-        },
-
-        new()
-        {
-            Id = 3,
-            Title = "Database Exam",
-            Course = "DBMS",
-            Date = DateTime.Today.AddDays(3),
-            Time = "10:00",
-            Type = "Exam",
-            Description = "Midterm examination."
-        },
-
-        new()
-        {
-            Id = 4,
-            Title = "English Presentation",
-            Course = "English",
-            Date = DateTime.Today.AddDays(5),
-            Time = "14:00",
-            Type = "Assignment",
-            Description = "Final English presentation."
-        },
-
-        new()
-        {
-            Id = 5,
-            Title = "Algorithms Lecture",
-            Course = "ADS",
-            Date = DateTime.Today.AddDays(7),
-            Time = "13:00",
-            Type = "Class",
-            Description = "Algorithms and data structures."
-        },
-
-        new()
-        {
-            Id = 6,
-            Title = "Project Deadline",
-            Course = "Web Development",
-            Date = DateTime.Today.AddDays(10),
-            Time = "23:59",
-            Type = "Assignment",
-            Description = "Submit the Student Planner project."
-        },
-
-        new()
-        {
-            Id = 7,
-            Title = "Study Session",
-            Course = "Personal",
-            Date = DateTime.Today.AddDays(2),
-            Time = "17:00",
-            Type = "Personal",
-            Description = "Independent study time."
-        }
-    };
-
-    // STATE
-
-    private DateTime DisplayedMonth =
-        new(DateTime.Today.Year, DateTime.Today.Month, 1);
-
-    private DateTime selectedDate = DateTime.Today;
-
-    private bool showModal = false;
-    private bool isEditing = false;
-
-    private int editingId;
-
-    private CalendarEvent formModel = new();
-
-    private readonly string[] Weekdays =
-    {
-        "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"
-    };
-
-    // CALENDAR DAYS
-
-    private IEnumerable<DateTime> CalendarDays {
-        get {
-            var firstDay = DisplayedMonth;
-
-            int offset = ((int)firstDay.DayOfWeek + 6) % 7;
-
-            var startDate = firstDay.AddDays(-offset);
-
-            return Enumerable.Range(0, 42)
-                .Select(i => startDate.AddDays(i));
-        }
-    }
-
-    // SELECTED DATE EVENTS
-
-    private IEnumerable<CalendarEvent> EventsForSelectedDate =>
-        events
-            .Where(e => e.Date.Date == selectedDate.Date)
-            .OrderBy(e => e.Time);
-
-    // STATISTICS
-
-    private int CountType(string type) {
-        return events.Count(e => e.Type == type);
-    }
-
-    // NAVIGATION
-
-    private void PreviousMonth() {
-        DisplayedMonth = DisplayedMonth.AddMonths(-1);
-    }
-
-    private void NextMonth() {
-        DisplayedMonth = DisplayedMonth.AddMonths(1);
-    }
-
-    private void GoToToday() {
-        DisplayedMonth = new DateTime(
-            DateTime.Today.Year,
-            DateTime.Today.Month,
-            1
-        );
-
-        selectedDate = DateTime.Today;
-    }
-
-    // SELECT DATE
-
-    private void SelectDate(DateTime day) {
-        selectedDate = day.Date;
-
-        if (day.Month != DisplayedMonth.Month ||
-            day.Year != DisplayedMonth.Year) {
-            DisplayedMonth = new DateTime(day.Year, day.Month, 1);
-        }
-    }
-
-    // CREATE EVENT
-
-    private void OpenCreateModal() {
-        formModel = new CalendarEvent {
-            Date = selectedDate,
-            Time = "09:00",
-            Type = "Class"
-        };
-
-        isEditing = false;
-        showModal = true;
-    }
-
-    // EDIT EVENT
-
-    private void EditEvent(CalendarEvent item) {
-        editingId = item.Id;
-
-        formModel = new CalendarEvent {
-            Id = item.Id,
-            Title = item.Title,
-            Course = item.Course,
-            Date = item.Date,
-            Time = item.Time,
-            Type = item.Type,
-            Description = item.Description
-        };
-
-        isEditing = true;
-        showModal = true;
-    }
-
-    // SAVE EVENT
-
-    private void SaveEvent() {
-        if (isEditing) {
-            var existing = events.FirstOrDefault(
-                e => e.Id == editingId
-            );
-
-            if (existing != null) {
-                existing.Title = formModel.Title;
-                existing.Course = formModel.Course;
-                existing.Date = formModel.Date;
-                existing.Time = formModel.Time;
-                existing.Type = formModel.Type;
-                existing.Description = formModel.Description;
-            }
-        } else {
-            formModel.Id = events.Count == 0
-                ? 1
-                : events.Max(e => e.Id) + 1;
-
-            events.Add(formModel);
-        }
-
-        selectedDate = formModel.Date.Date;
-
-        DisplayedMonth = new DateTime(
-            selectedDate.Year,
-            selectedDate.Month,
-            1
-        );
-
-        CloseModal();
-    }
-
-    // DELETE EVENT
-
-    private void DeleteEvent(int id) {
-        var item = events.FirstOrDefault(e => e.Id == id);
-
-        if (item != null) {
-            events.Remove(item);
-        }
-    }
-
-    // CLOSE MODAL
-
-    private void CloseModal() {
-        showModal = false;
-    }
-
-    // EVENT CSS CLASS
-
-    private string EventTypeClass(string type) {
-        return type.ToLower();
-    }
-
+    [Inject] private IScheduleService ScheduleService { get; set; } = default!;
+    [Inject] private ICourseService CourseService { get; set; } = default!;
+    [Inject] private IAssignmentService AssignmentService { get; set; } = default!;
+    private List<ScheduleEvent> events=new(); private List<Course> courses=new(); private List<Assignment> assignments=new();
+    private DateTime DisplayedMonth=new(DateTime.Today.Year,DateTime.Today.Month,1),selectedDate=DateTime.Today;
+    private bool showModal,isEditing,isSaving; private int editingId; private int? pendingDeleteId; private ScheduleEvent formModel=new(); private string errorMessage="";
+    private readonly string[] Weekdays={"MON","TUE","WED","THU","FRI","SAT","SUN"};
+    private IEnumerable<DateTime> CalendarDays { get { var first=DisplayedMonth;var offset=((int)first.DayOfWeek+6)%7;var start=first.AddDays(-offset);return Enumerable.Range(0,42).Select(i=>start.AddDays(i)); } }
+    private IEnumerable<ScheduleEvent> EventsForSelectedDate=>events.Where(e=>e.StartTime.Date==selectedDate.Date).OrderBy(e=>e.StartTime);
+    protected override async Task OnInitializedAsync(){ScheduleService.Changed+=OnChanged;CourseService.Changed+=OnChanged;AssignmentService.Changed+=OnChanged;await LoadAsync();}
+    private async Task LoadAsync(){try{events=(await ScheduleService.GetEventsAsync()).ToList();courses=(await CourseService.GetCoursesAsync()).ToList();assignments=(await AssignmentService.GetAssignmentsAsync()).ToList();errorMessage="";}catch(Exception ex){Logger.LogError(ex,"Calendar data could not be loaded.");errorMessage="Calendar data could not be loaded.";}}
+    private void OnChanged()=>_ = InvokeAsync(async()=>{await LoadAsync();StateHasChanged();});
+    private int CountType(string type)=>events.Count(e=>e.Type.ToString()==type);
+    private void PreviousMonth()=>DisplayedMonth=DisplayedMonth.AddMonths(-1);
+    private void NextMonth()=>DisplayedMonth=DisplayedMonth.AddMonths(1);
+    private void GoToToday(){DisplayedMonth=new(DateTime.Today.Year,DateTime.Today.Month,1);selectedDate=DateTime.Today;}
+    private void SelectDate(DateTime day){selectedDate=day.Date;if(day.Month!=DisplayedMonth.Month||day.Year!=DisplayedMonth.Year)DisplayedMonth=new(day.Year,day.Month,1);}
+    private void OpenCreateModal(){var start=FindNextAvailableStart(selectedDate.Date);formModel=new ScheduleEvent{StartTime=start,EndTime=start.AddHours(1),Type=ScheduleEventType.Class};isEditing=false;showModal=true;}
+    private DateTime FindNextAvailableStart(DateTime date){var start=date.Date.AddHours(9);while(start<date.Date.AddHours(23)&&events.Any(item=>item.StartTime<start.AddHours(1)&&item.EndTime>start))start=start.AddHours(1);return start;}
+    private void EditEvent(ScheduleEvent item){editingId=item.Id;formModel=new ScheduleEvent{Id=item.Id,CourseId=item.CourseId,CourseName=item.CourseName,Title=item.Title,Description=item.Description,StartTime=item.StartTime,EndTime=item.EndTime,Location=item.Location,Type=item.Type};isEditing=true;showModal=true;}
+    private async Task SaveEvent(){if(isSaving)return;if(formModel.EndTime<=formModel.StartTime){errorMessage="End time must be later than start time.";return;}isSaving=true;try{formModel.CourseName=courses.FirstOrDefault(c=>c.Id==formModel.CourseId)?.Code??"Personal";if(isEditing)await ScheduleService.UpdateEventAsync(formModel);else await ScheduleService.CreateEventAsync(formModel);errorMessage="";selectedDate=formModel.StartTime.Date;DisplayedMonth=new(selectedDate.Year,selectedDate.Month,1);await LoadAsync();CloseModal();}catch(ValidationException ex){errorMessage=ex.Message;}catch(Exception ex){Logger.LogError(ex,"Calendar event save failed for {EventId}.",formModel.Id);errorMessage="The event could not be saved. Please try again.";}finally{isSaving=false;}}
+    private void RequestDeleteEvent(int id)=>pendingDeleteId=id;
+    private Task CancelDeleteEvent(){pendingDeleteId=null;return Task.CompletedTask;}
+    private async Task ConfirmDeleteEvent(){if(pendingDeleteId is not int id)return;try{var deleted=await ScheduleService.DeleteEventAsync(id);pendingDeleteId=null;if(!deleted)errorMessage="This event is no longer available.";await LoadAsync();}catch(Exception ex){Logger.LogError(ex,"Calendar event deletion failed for {EventId}.",id);errorMessage="The event could not be deleted.";}}
+    private void CloseModal()=>showModal=false;
+    private void HandleModalKeyDown(KeyboardEventArgs e){if(e.Key=="Escape")showModal=false;}
+    private string EventTypeClass(ScheduleEventType type)=>type.ToString().ToLowerInvariant();
+    public void Dispose(){ScheduleService.Changed-=OnChanged;CourseService.Changed-=OnChanged;AssignmentService.Changed-=OnChanged;}
 }
